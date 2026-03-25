@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Meetang - Smart Tracker Pro</title>
+    <!-- Dependencies -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase Standard Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        window.fb = { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, getFirestore, doc, setDoc, onSnapshot, collection };
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap');
+        :root {
+            --primary: #f97316; /* ค่าเริ่มต้นส้ม */
+            --primary-light: #fff7ed;
+        }
+        body { font-family: 'Kanit', sans-serif; -webkit-tap-highlight-color: transparent; }
+        
+        /* Dynamic Primary Classes */
+        .text-theme-primary { color: var(--primary); }
+        .bg-theme-primary { background-color: var(--primary); }
+        .border-theme-primary { border-color: var(--primary); }
+        .tab-active { color: var(--primary); border-top: 2px solid var(--primary); } 
+        .tab-inactive { color: #94a3b8; border-top: 2px solid transparent; }
+        
+        .card-navy { background: linear-gradient(135deg, #2A3441 0%, #1A222C 100%); }
+        .safe-pb { padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 85px); }
+        .bottom-sheet { animation: slideUp 0.3s ease-out; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        
+        .status-safe { color: #10b981; }
+        .status-warning { color: #f59e0b; }
+        .status-danger { color: #ef4444; }
+
+        /* Animation for logo long press hint */
+        .logo-hint { transition: transform 0.2s; }
+        .logo-hint:active { transform: scale(1.2); }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen relative overflow-x-hidden">
+
+    <!-- Header Section -->
+    <header class="bg-white px-5 py-4 sticky top-0 z-40 flex justify-between items-center shadow-sm">
+        <div class="flex items-center gap-2.5">
+            <!-- โลโก้แมวกวัก (กดค้างเพื่อปลดล็อก Admin) -->
+            <button oncontextmenu="return false;" onmousedown="startLogoPress()" onmouseup="endLogoPress()" ontouchstart="startLogoPress()" ontouchend="endLogoPress()" class="logo-hint outline-none">
+                <i class="fa-solid fa-cat text-theme-primary text-2xl drop-shadow-sm"></i>
+            </button>
+            <div>
+                <h1 class="text-xl font-bold text-slate-800 flex items-baseline gap-1.5 leading-tight">
+                    Meetang <span class="text-[9px] font-normal text-slate-400 border-l pl-1.5 border-slate-200 uppercase tracking-widest leading-none">Smart Tracker</span>
+                </h1>
+                <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">บัญชีผ่อนส่วนตัวของคุณ 🔒</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <!-- Cloud Status Indicator -->
+            <div id="cloud-status" class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 transition-colors">
+                <i class="fa-solid fa-cloud text-xs"></i>
+            </div>
+            <!-- Theme Icon (Visible only if Admin enabled) -->
+            <button id="theme-btn" onclick="openThemeMenu()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary transition-colors hidden">
+                <i class="fa-solid fa-palette text-sm"></i>
+            </button>
+            <!-- Notification Bell -->
+            <button onclick="openNotifications()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 relative hover:text-theme-primary transition-colors">
+                <i class="fa-solid fa-bell text-sm"></i>
+                <div id="notif-badge" class="absolute top-1.5 right-1.5 w-3.5 h-3.5 bg-orange-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold hidden shadow-sm">0</div>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Viewport -->
+    <main class="p-4 max-w-md mx-auto w-full safe-pb" id="app-viewport">
+        <div class="flex flex-col items-center justify-center py-20 text-slate-400">
+            <i class="fa-solid fa-spinner fa-spin text-2xl mb-4 text-theme-primary"></i>
+            <p class="text-sm">กำลังซิงค์ข้อมูลส่วนตัว...</p>
+        </div>
+    </main>
+
+    <!-- Modal Form (Bottom Sheet) -->
+    <div id="modal-screen" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex flex-col justify-end transition-opacity">
+        <div class="bg-white w-full max-w-md mx-auto rounded-t-[2rem] p-6 bottom-sheet shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-5" onclick="closeModal()"></div>
+            <div id="modal-inner"></div>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 flex justify-around items-center z-40 px-2 h-16 max-w-md mx-auto w-full shadow-[0_-8px_20px_-5px_rgba(0,0,0,0.05)] pb-safe-bottom">
+        <button onclick="changeTab('cards')" id="nav-cards" class="flex flex-col items-center justify-center w-full h-full space-y-1 transition-all">
+            <i class="fa-solid fa-credit-card text-lg"></i>
+            <span class="text-[9px] font-bold">จัดการบัตร</span>
+        </button>
+        <button onclick="changeTab('budget')" id="nav-budget" class="flex flex-col items-center justify-center w-full h-full space-y-1 transition-all">
+            <i class="fa-solid fa-chart-pie text-lg"></i>
+            <span class="text-[9px] font-bold">งบประมาณ</span>
+        </button>
+        <button onclick="changeTab('installments')" id="nav-installments" class="flex flex-col items-center justify-center w-full h-full space-y-1 transition-all">
+            <i class="fa-solid fa-list-check text-lg"></i>
+            <span class="text-[9px] font-bold">รายการผ่อน</span>
+        </button>
+        <button onclick="changeTab('summary')" id="nav-summary" class="flex flex-col items-center justify-center w-full h-full space-y-1 transition-all">
+            <i class="fa-solid fa-chart-line text-lg"></i>
+            <span class="text-[9px] font-bold">สรุปรายเดือน</span>
+        </button>
+    </nav>
+
+    <script type="module">
+        // --- DATA STATE ---
+        let appState = {
+            cards: [],
+            installments: [],
+            activeTab: 'cards',
+            theme: { color: '#f97316', name: 'Original Orange' },
+            isThemeEnabled: false // Locked by default
+        };
+        let chartInstance = null;
+        let db, auth, user;
+        let logoTimer;
+
+        // --- MASTER CONFIG ---
+        const MASTER_KEY = 'MEETANG_DATABASE_FINAL';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'meetang-tracker';
+        const ADMIN_CODE = "MEETANG-ADMIN"; // รหัสผ่านสำหรับ Admin
+
+        // --- INITIALIZATION ---
+        async function init() {
+            const { fb } = window;
+            const firebaseConfig = JSON.parse(__firebase_config);
+            const app = fb.initializeApp(firebaseConfig);
+            auth = fb.getAuth(app);
+            db = fb.getFirestore(app);
+
+            const initAuth = async () => {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await fb.signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await fb.signInAnonymously(auth);
+                }
+            };
+
+            try {
+                await initAuth();
+                fb.onAuthStateChanged(auth, (u) => {
+                    user = u;
+                    if (user) {
+                        setupCloudSync();
+                        document.getElementById('cloud-status').classList.replace('text-slate-300', 'text-emerald-500');
+                    }
+                });
+            } catch (err) {
+                console.error("Auth Failed", err);
+                loadLocalOnly();
+            }
+        }
+
+        function setupCloudSync() {
+            const { fb } = window;
+            const docRef = fb.doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'appState');
+            fb.onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    appState = docSnap.data();
+                    applyTheme(appState.theme?.color || '#f97316');
+                    checkAdminStatus();
+                    renderViewport();
+                    updateNotifBadge();
+                } else {
+                    migrateAndInitialize();
+                }
+            }, (error) => { console.error("Firestore Error", error); loadLocalOnly(); });
+        }
+
+        async function migrateAndInitialize() {
+            const localDataStr = localStorage.getItem(MASTER_KEY);
+            if (localDataStr) {
+                try { appState = JSON.parse(localDataStr); } catch(e) {}
+            } else {
+                appState.cards = [{ id: 'c1', name: 'KBank', limit: 100000, date: 20 }];
+            }
+            if(!appState.theme) appState.theme = { color: '#f97316', name: 'Original Orange' };
+            await saveToCloud();
+            renderViewport();
+        }
+
+        async function saveToCloud() {
+            if (!user) return;
+            const { fb } = window;
+            const docRef = fb.doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'appState');
+            try {
+                await fb.setDoc(docRef, appState);
+                localStorage.setItem(MASTER_KEY, JSON.stringify(appState));
+            } catch (err) { console.error("Cloud Save Error", err); }
+        }
+
+        function loadLocalOnly() {
+            const data = localStorage.getItem(MASTER_KEY);
+            if (data) appState = JSON.parse(data);
+            applyTheme(appState.theme?.color || '#f97316');
+            renderViewport();
+        }
+
+        // --- ADMIN & THEME LOGIC ---
+        window.startLogoPress = () => {
+            logoTimer = setTimeout(() => {
+                const code = prompt("ใส่รหัสผ่านผู้ดูแลระบบ (Admin) เพื่อเปิดสิทธิ์ตั้งค่า:");
+                if (code === ADMIN_CODE) {
+                    appState.isThemeEnabled = true;
+                    saveToCloud();
+                    alert("ยินดีด้วย! คุณเปิดสิทธิ์การเข้าถึงธีมสีเรียบร้อยแล้ว ปุ่มธีมจะปรากฏที่มุมขวาบนค่ะ");
+                    checkAdminStatus();
+                } else if(code !== null) {
+                    alert("รหัสผ่านไม่ถูกต้องค่ะ");
+                }
+            }, 2000); // 2 Seconds long press
+        };
+
+        window.endLogoPress = () => clearTimeout(logoTimer);
+
+        function checkAdminStatus() {
+            const btn = document.getElementById('theme-btn');
+            if(appState.isThemeEnabled) btn.classList.remove('hidden');
+            else btn.classList.add('hidden');
+        }
+
+        function applyTheme(color) {
+            document.documentElement.style.setProperty('--primary', color);
+            // Create a lighter version for secondary BG
+            const lightColor = color + "10"; // 10% opacity hex
+            document.documentElement.style.setProperty('--primary-light', lightColor);
+        }
+
+        window.openThemeMenu = () => {
+            const themes = [
+                { name: 'Original Orange', color: '#f97316' },
+                { name: 'Deep Sea Blue', color: '#0284c7' },
+                { name: 'Wealthy Emerald', color: '#059669' },
+                { name: 'Royal Violet', color: '#7c3aed' },
+                { name: 'Modern Rose', color: '#e11d48' }
+            ];
+            let html = `<div class="grid grid-cols-1 gap-3">
+                ${themes.map(t => `
+                    <button onclick="setTheme('${t.color}', '${t.name}')" class="flex items-center justify-between p-4 rounded-2xl border ${appState.theme?.color === t.color ? 'border-theme-primary bg-slate-50' : 'border-slate-100'} transition-all">
+                        <div class="flex items-center gap-3">
+                            <div class="w-6 h-6 rounded-full" style="background-color: ${t.color}"></div>
+                            <span class="text-sm font-bold text-slate-700">${t.name}</span>
+                        </div>
+                        ${appState.theme?.color === t.color ? `<i class="fa-solid fa-circle-check text-theme-primary"></i>` : ''}
+                    </button>
+                `).join('')}
+                <div class="mt-4 p-3 bg-slate-50 rounded-xl">
+                    <p class="text-[10px] text-slate-400 text-center uppercase tracking-widest font-bold">Admin Controlled Feature</p>
+                </div>
+            </div>`;
+            renderModal('ปรับแต่งสีสันการใช้งาน', html);
+        }
+
+        window.setTheme = (color, name) => {
+            appState.theme = { color, name };
+            applyTheme(color);
+            saveToCloud();
+            closeModal();
+            renderViewport();
+        }
+
+        // --- NOTIFICATIONS ---
+        function getNotifs() {
+            const list = [];
+            const today = new Date().getDate();
+            appState.cards.forEach(c => {
+                const diff = c.date - today;
+                if (diff >= 0 && diff <= 3) {
+                    list.push({ title: 'ใกล้ตัดรอบ', text: `บัตร ${c.name} จะตัดรอบใน ${diff === 0 ? 'วันนี้' : diff + ' วัน'}`, icon: 'fa-clock' });
+                }
+            });
+            return list;
+        }
+
+        function updateNotifBadge() {
+            const count = getNotifs().length;
+            const badge = document.getElementById('notif-badge');
+            if (badge) {
+                if (count > 0) { badge.innerText = count; badge.classList.remove('hidden'); }
+                else badge.classList.add('hidden');
+            }
+        }
+
+        window.openNotifications = () => {
+            const list = getNotifs();
+            let html = `<div class="space-y-3">
+                ${list.length === 0 ? '<p class="text-center text-slate-400 py-4 text-sm">ไม่มีแจ้งเตือนใหม่ค่ะ</p>' : list.map(n => `
+                    <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex gap-3 items-center">
+                        <div class="w-9 h-9 rounded-full bg-white flex items-center justify-center text-theme-primary shadow-sm shrink-0"><i class="fa-solid ${n.icon} text-sm"></i></div>
+                        <div><p class="text-xs font-bold text-slate-800">${n.title}</p><p class="text-[10px] text-slate-500 mt-0.5">${n.text}</p></div>
+                    </div>
+                `).join('')}
+            </div>`;
+            renderModal('การแจ้งเตือน', html);
+        }
+
+        // --- NAVIGATION & VIEWS ---
+        window.changeTab = (tab) => {
+            appState.activeTab = tab;
+            const menuIds = ['cards', 'budget', 'installments', 'summary'];
+            menuIds.forEach(m => {
+                const btn = document.getElementById(`nav-${m}`);
+                if (btn) btn.className = `flex flex-col items-center justify-center w-full h-full space-y-1 ${tab === m ? 'tab-active' : 'tab-inactive'}`;
+            });
+            renderViewport();
+            saveToCloud();
+        };
+
+        function renderViewport() {
+            const view = document.getElementById('app-viewport');
+            if (!view) return;
+            view.innerHTML = '';
+
+            if (appState.activeTab === 'cards') {
+                view.innerHTML = `
+                    <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-credit-card text-theme-primary"></i> บัตรเครดิตของคุณ</h2>
+                    <div class="space-y-3">
+                        ${appState.cards.map(c => `
+                            <div class="card-navy p-5 rounded-2xl text-white shadow-md relative overflow-hidden">
+                                <div class="flex justify-between items-start mb-6 relative z-10">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"><i class="fa-solid fa-microchip text-xs text-white/50"></i></div>
+                                        <h3 class="text-lg font-bold tracking-wide leading-none">${c.name}</h3>
+                                    </div>
+                                    <div class="flex gap-1.5">
+                                        <button onclick="editCard('${c.id}')" class="w-7 h-7 bg-white/10 rounded-full flex items-center justify-center text-white/60 hover:bg-theme-primary hover:text-white transition-all"><i class="fa-solid fa-pen text-[10px]"></i></button>
+                                        <button onclick="removeCard('${c.id}')" class="w-7 h-7 bg-white/10 rounded-full flex items-center justify-center text-white/60 hover:bg-red-500 hover:text-white transition-all"><i class="fa-solid fa-trash text-[10px]"></i></button>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 relative z-10 gap-2">
+                                    <div><p class="text-[9px] text-white/30 uppercase tracking-widest mb-0.5 leading-none">Credit Limit</p><p class="text-lg font-bold leading-tight">${toCurr(c.limit)}</p></div>
+                                    <div class="text-right"><p class="text-[9px] text-white/30 uppercase tracking-widest mb-0.5 leading-none">Due Day</p><p class="text-xl font-black text-orange-400 leading-tight">${c.date}</p></div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <button onclick="openCardForm()" class="fixed bottom-20 right-5 w-12 h-12 bg-theme-primary text-white rounded-full shadow-lg flex items-center justify-center text-xl z-40 active:scale-90 transition-all">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>`;
+            } 
+            else if (appState.activeTab === 'budget') {
+                const totalLimit = appState.cards.reduce((sum, c) => sum + c.limit, 0);
+                const totalUsed = appState.installments.reduce((sum, i) => sum + i.amount, 0);
+                const totalRem = totalLimit - totalUsed;
+                const totalPercent = totalLimit > 0 ? (totalUsed / totalLimit) * 100 : 0;
+
+                view.innerHTML = `
+                    <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-theme-primary"></i> วิเคราะห์งบประมาณ</h2>
+                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm mb-5">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 text-center leading-none">วงเงินรวมทุกบัตร</p>
+                        <h3 class="text-2xl font-black text-slate-800 text-center mb-4 leading-tight">${toCurr(totalLimit)}</h3>
+                        <div class="flex justify-between items-end mb-2">
+                            <div class="text-center">
+                                <p class="text-[9px] text-slate-400 uppercase font-bold leading-none">ใช้ไป</p>
+                                <p class="text-sm font-bold text-red-500 leading-tight">${toCurr(totalUsed)}</p>
+                            </div>
+                            <div class="h-10 w-[1px] bg-slate-100"></div>
+                            <div class="text-center">
+                                <p class="text-[9px] text-slate-400 uppercase font-bold leading-none">คงเหลือ</p>
+                                <p class="text-sm font-bold text-emerald-500 leading-tight">${toCurr(totalRem)}</p>
+                            </div>
+                        </div>
+                        <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                            <div class="h-full bg-theme-primary transition-all duration-1000" style="width: ${totalPercent}%"></div>
+                        </div>
+                    </div>
+                    <div class="space-y-3">
+                        ${appState.cards.map(c => {
+                            const used = appState.installments.filter(i => i.cardId === c.id).reduce((sum, i) => sum + i.amount, 0);
+                            const percent = Math.min((used / c.limit) * 100, 100);
+                            const statusColor = percent > 80 ? 'status-danger' : (percent > 50 ? 'status-warning' : 'status-safe');
+                            return `
+                            <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                                <div class="flex justify-between items-center mb-2">
+                                    <h3 class="font-bold text-slate-700 text-sm leading-none">${c.name}</h3>
+                                    <span class="text-[9px] font-bold ${statusColor} bg-slate-50 px-2 py-0.5 rounded-full leading-none">${percent.toFixed(0)}% Used</span>
+                                </div>
+                                <div class="w-full h-1.5 bg-slate-50 rounded-full mb-2"><div class="h-full bg-theme-primary" style="width: ${percent}%"></div></div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[9px] text-slate-400 font-medium italic leading-none">Available: ${toCurr(c.limit - used)}</span>
+                                    <button onclick="openBudgetForm('${c.id}')" class="text-[9px] font-bold text-theme-primary underline leading-none uppercase tracking-tighter">ปรับงบ</button>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                    <button onclick="openBudgetForm()" class="fixed bottom-20 right-5 w-12 h-12 bg-theme-primary text-white rounded-full shadow-lg flex items-center justify-center text-lg z-40 active:scale-90 transition-all">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                    </button>`;
+            }
+            else if (appState.activeTab === 'installments') {
+                view.innerHTML = `
+                    <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-list-check text-theme-primary"></i> รายการผ่อนชำระ</h2>
+                    <div class="space-y-2.5">
+                        ${appState.installments.length === 0 ? `<div class="text-center py-20 text-slate-400 text-xs">ยังไม่มีรายการผ่อนนะคะคุณ</div>` : appState.installments.map(i => {
+                            const card = appState.cards.find(c => c.id === i.cardId);
+                            return `<div class="bg-white p-4 rounded-2xl border border-slate-50 shadow-sm flex justify-between items-center group">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-300 shrink-0"><i class="fa-solid fa-tag text-sm"></i></div>
+                                    <div><h4 class="font-bold text-slate-800 text-sm leading-tight">${i.name}</h4><p class="text-[9px] text-slate-400 mt-0.5">${card ? card.name : '-'} | เริ่ม ${i.startMonth}</p></div>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-sm font-black text-theme-primary leading-tight">${toCurr(i.amount)}</p>
+                                    <p class="text-[8px] text-slate-400 uppercase font-bold leading-none">${i.duration} งวด</p>
+                                    <button onclick="removeInstallment('${i.id}')" class="text-[9px] text-red-300 font-bold mt-1 leading-none uppercase tracking-tighter">ลบ</button>
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                    <button onclick="openInstallmentForm()" class="fixed bottom-20 right-5 w-12 h-12 bg-theme-primary text-white rounded-full shadow-lg flex items-center justify-center text-xl z-40 active:scale-90 transition-all">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>`;
+            }
+            else if (appState.activeTab === 'summary') { renderSummary(view); }
+        }
+
+        function renderSummary(container) {
+            if (appState.installments.length === 0) {
+                container.innerHTML = `<div class="py-20 text-center text-slate-400 text-xs">เพิ่มรายการผ่อนเพื่อดูสรุปออโต้จ้า</div>`; return;
+            }
+            let first = appState.installments[0].startMonth;
+            let last = '0000-00';
+            appState.installments.forEach(i => {
+                if (i.startMonth < first) first = i.startMonth;
+                const end = shiftM(i.startMonth, i.duration - 1);
+                if (end > last) last = end;
+            });
+            const stats = [];
+            let curr = first;
+            while (curr <= last && stats.length < 36) {
+                let sum = 0;
+                appState.installments.forEach(i => {
+                    const iEnd = shiftM(i.startMonth, i.duration - 1);
+                    if (curr >= i.startMonth && curr <= iEnd) sum += i.amount;
+                });
+                stats.push({ ym: curr, label: formatShortYM(curr), total: sum });
+                curr = shiftM(curr, 1);
+            }
+            container.innerHTML = `
+                <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-chart-line text-theme-primary"></i> สรุปรายเดือนของคุณ</h2>
+                <div class="bg-white p-4 rounded-3xl shadow-sm border border-slate-50 mb-5"><div class="h-48 w-full"><canvas id="summaryCanvas"></canvas></div></div>
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-50 overflow-hidden divide-y divide-slate-50">
+                    <div class="p-3.5 bg-slate-50/50 flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-widest"><span>ประจำเดือน</span><span>ยอดรวมจ่าย</span></div>
+                    ${stats.map(s => `<div class="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                        <div><p class="text-sm font-bold text-slate-800 leading-tight">${getLongM(s.ym)}</p><p class="text-[8px] text-slate-400 uppercase tracking-widest mt-0.5 leading-none">Auto Calculate</p></div>
+                        <p class="text-sm font-black text-theme-primary leading-tight">${toCurr(s.total)}</p>
+                    </div>`).join('')}
+                </div>`;
+            requestAnimationFrame(() => {
+                const ctx = document.getElementById('summaryCanvas').getContext('2d');
+                if (chartInstance) chartInstance.destroy();
+                chartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: stats.map(s => s.label),
+                        datasets: [{
+                            data: stats.map(s => s.total),
+                            borderColor: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
+                            borderWidth: 3, backgroundColor: 'rgba(0,0,0,0.02)', fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#fff'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true, grid: { color: '#f8fafc' }, ticks: { font: {size: 8}, callback: v => '฿' + v.toLocaleString() } },
+                                  x: { grid: { display: false }, ticks: { font: {size: 8} } } } }
+                });
+            });
+        }
+
+        const formatShortYM = (ym) => {
+            const m = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+            const [y, mm] = ym.split('-'); return m[parseInt(mm)-1] + ' ' + y.substring(2);
+        };
+
+        const toCurr = (v) => '฿' + Number(v).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1});
+        const getLongM = (ym) => {
+            const th = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+            const [y, m] = ym.split('-'); return th[parseInt(m)-1] + ' ' + y;
+        };
+        const shiftM = (ym, n) => {
+            const [y, m] = ym.split('-').map(Number);
+            const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        };
+
+        // --- FORM HANDLERS ---
+        window.renderModal = (title, html) => {
+            document.getElementById('modal-inner').innerHTML = `<h3 class="text-lg font-bold mb-4 text-slate-800">${title}</h3>${html}`;
+            document.getElementById('modal-screen').classList.remove('hidden');
+        };
+        window.closeModal = () => document.getElementById('modal-screen').classList.add('hidden');
+
+        window.openCardForm = () => {
+            renderModal('เพิ่มบัตรใหม่', `<div class="space-y-3">
+                <input id="in-name" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="ชื่อบัตร">
+                <input id="in-limit" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="วงเงินรวม">
+                <input id="in-date" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="วันตัดยอด (1-31)">
+                <button onclick="commitCard()" class="w-full py-3 bg-theme-primary text-white rounded-xl font-bold shadow-md mt-2 text-sm uppercase tracking-wider">บันทึกข้อมูล</button>
+            </div>`);
+        };
+        window.commitCard = () => {
+            const n = document.getElementById('in-name').value;
+            const l = document.getElementById('in-limit').value;
+            const d = document.getElementById('in-date').value;
+            if(!n || !l || !d) return alert('กรอกข้อมูลให้ครบนะคะ');
+            appState.cards.push({ id: Date.now().toString(), name: n, limit: Number(l), date: Number(d) });
+            saveToCloud(); closeModal(); renderViewport();
+        };
+
+        window.editCard = (id) => {
+            const card = appState.cards.find(c => c.id === id);
+            renderModal('แก้ไขข้อมูลบัตร', `<div class="space-y-3">
+                <input id="in-name" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" value="${card.name}">
+                <input id="in-limit" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" value="${card.limit}">
+                <input id="in-date" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" value="${card.date}">
+                <button onclick="updateCard('${id}')" class="w-full py-3 bg-theme-primary text-white rounded-xl font-bold shadow-md mt-2 text-sm uppercase tracking-wider">อัปเดตข้อมูล</button>
+            </div>`);
+        };
+        window.updateCard = (id) => {
+            const n = document.getElementById('in-name').value;
+            const l = document.getElementById('in-limit').value;
+            const d = document.getElementById('in-date').value;
+            const idx = appState.cards.findIndex(c => c.id === id);
+            if (idx !== -1) { appState.cards[idx] = { ...appState.cards[idx], name: n, limit: Number(l), date: Number(d) }; saveToCloud(); closeModal(); renderViewport(); }
+        };
+
+        window.openBudgetForm = (specificId) => {
+            if(!specificId) {
+                renderModal('แก้ไขงบประมาณ', `<div class="space-y-3">
+                    <select id="sel-bud-id" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm">${appState.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select>
+                    <input id="in-bud-limit" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="ระบุงบใหม่">
+                    <button onclick="updateBudgetLimit(document.getElementById('sel-bud-id').value)" class="w-full py-3 bg-theme-primary text-white rounded-xl font-bold shadow-md mt-2 text-sm uppercase tracking-wider">อัปเดตงบประมาณ</button>
+                </div>`); return;
+            }
+            const card = appState.cards.find(c => c.id === specificId);
+            renderModal('ปรับปรุงงบประมาณ', `<div class="space-y-3">
+                <p class="text-xs text-slate-500">ปรับวงเงินบัตร <strong>${card.name}</strong></p>
+                <input id="in-bud-limit" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" value="${card.limit}">
+                <button onclick="updateBudgetLimit('${specificId}')" class="w-full py-3 bg-theme-primary text-white rounded-xl font-bold shadow-md mt-2 text-sm uppercase tracking-wider">อัปเดตงบประมาณ</button>
+            </div>`);
+        };
+        window.updateBudgetLimit = (cid) => {
+            const limit = document.getElementById('in-bud-limit').value;
+            const idx = appState.cards.findIndex(c => c.id === cid);
+            if(idx !== -1) { appState.cards[idx].limit = Number(limit); saveToCloud(); closeModal(); renderViewport(); }
+        };
+
+        window.openInstallmentForm = () => {
+            if(appState.cards.length === 0) return alert('เพิ่มบัตรก่อนนะคะ');
+            renderModal('เพิ่มรายการผ่อน', `<div class="space-y-3">
+                <select id="in-cid" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm">${appState.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select>
+                <input id="in-item" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="ชื่อสินค้า/รายการ">
+                <div class="flex gap-3">
+                    <input id="in-start" type="month" class="flex-1 p-3 bg-slate-50 rounded-xl outline-none text-sm">
+                    <input id="in-dur" type="number" class="w-24 p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="งวด">
+                </div>
+                <input id="in-amt" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="ยอดต่อเดือน">
+                <button onclick="commitInstallment()" class="w-full py-3 bg-theme-primary text-white rounded-xl font-bold shadow-md mt-2 text-sm uppercase tracking-wider">บันทึกรายการ</button>
+            </div>`);
+        };
+        window.commitInstallment = () => {
+            const cid = document.getElementById('in-cid').value;
+            const n = document.getElementById('in-item').value;
+            const s = document.getElementById('in-start').value;
+            const d = document.getElementById('in-dur').value;
+            const a = document.getElementById('in-amt').value;
+            if(!n || !s || !d || !a) return alert('ข้อมูลไม่ครบนะคะ');
+            appState.installments.push({ id: Date.now().toString(), cardId: cid, name: n, startMonth: s, duration: Number(d), amount: Number(a) });
+            saveToCloud(); closeModal(); renderViewport();
+        };
+
+        window.removeCard = (id) => { if(confirm("ลบบัตรนี้รายการผ่อนจะหายไปด้วยนะคะ ยืนยันไหม?")) { appState.cards = appState.cards.filter(c => c.id !== id); appState.installments = appState.installments.filter(i => i.cardId !== id); saveToCloud(); renderViewport(); } };
+        window.removeInstallment = (id) => { if(confirm("ลบรายการผ่อนนี้นะคะ?")) { appState.installments = appState.installments.filter(i => i.id !== id); saveToCloud(); renderViewport(); } };
+
+        window.onload = init;
+    </script>
+</body>
+</html>
