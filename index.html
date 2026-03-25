@@ -9,13 +9,11 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Firebase Standard Modules -->
+    <!-- Firebase Libraries -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Store Firebase functions in window for global access
         window.fb = { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, getFirestore, doc, setDoc, getDoc, onSnapshot };
     </script>
 
@@ -41,36 +39,47 @@
         .status-safe { color: #10b981; }
         .status-warning { color: #f59e0b; }
         .status-danger { color: #ef4444; }
+
         .logo-hint:active { transform: scale(1.1); transition: 0.1s; }
+        
+        /* New Save Status Animation */
+        #save-banner { transition: all 0.3s ease-in-out; height: 0; opacity: 0; overflow: hidden; }
+        #save-banner.visible { height: 28px; opacity: 1; margin-top: 4px; }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen relative overflow-x-hidden">
 
     <!-- Header Section -->
-    <header class="bg-white px-5 py-4 sticky top-0 z-40 flex justify-between items-center shadow-sm">
-        <div class="flex items-center gap-2.5">
-            <!-- Long press for Admin -->
-            <button onmousedown="startLogoPress()" onmouseup="endLogoPress()" ontouchstart="startLogoPress()" ontouchend="endLogoPress()" class="logo-hint outline-none">
-                <i class="fa-solid fa-cat text-theme-primary text-2xl drop-shadow-sm"></i>
-            </button>
-            <div>
-                <h1 class="text-xl font-bold text-slate-800 flex items-baseline gap-1.5 leading-tight">
-                    Meetang <span class="text-[9px] font-normal text-slate-400 border-l pl-1.5 border-slate-200 uppercase tracking-widest leading-none">Smart Tracker</span>
-                </h1>
-                <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest leading-none">บัญชีผ่อนส่วนตัวของคุณ 🔒</p>
+    <header class="bg-white px-5 py-4 sticky top-0 z-40 flex flex-col shadow-sm">
+        <div class="flex justify-between items-center w-full">
+            <div class="flex items-center gap-2.5">
+                <button onmousedown="startLogoPress()" onmouseup="endLogoPress()" ontouchstart="startLogoPress()" ontouchend="endLogoPress()" class="logo-hint outline-none">
+                    <i class="fa-solid fa-cat text-theme-primary text-2xl drop-shadow-sm"></i>
+                </button>
+                <div>
+                    <h1 class="text-xl font-bold text-slate-800 flex items-baseline gap-1.5 leading-tight">
+                        Meetang <span class="text-[9px] font-normal text-slate-400 border-l pl-1.5 border-slate-200 uppercase tracking-widest leading-none">Smart Tracker</span>
+                    </h1>
+                    <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest leading-none">บัญชีผ่อนส่วนตัวของคุณ 🔒</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="theme-btn" onclick="openThemeMenu()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary transition-colors hidden">
+                    <i class="fa-solid fa-palette text-sm"></i>
+                </button>
+                <button onclick="openNotifications()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 relative hover:text-theme-primary">
+                    <i class="fa-solid fa-bell text-sm"></i>
+                    <div id="notif-badge" class="absolute top-1.5 right-1.5 w-3.5 h-3.5 bg-orange-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold hidden shadow-sm">0</div>
+                </button>
             </div>
         </div>
-        <div class="flex items-center gap-2">
-            <div id="sync-status" class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
-                <i id="sync-icon" class="fa-solid fa-cloud text-xs"></i>
+        
+        <!-- Clear Save Status Banner -->
+        <div id="save-banner" class="flex items-center justify-center gap-2 bg-slate-50 rounded-full mx-auto px-4">
+            <div id="save-icon-container">
+                <i class="fa-solid fa-cloud-arrow-up text-[10px] text-orange-500 animate-bounce"></i>
             </div>
-            <button id="theme-btn" onclick="openThemeMenu()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary transition-colors hidden">
-                <i class="fa-solid fa-palette text-sm"></i>
-            </button>
-            <button onclick="openNotifications()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 relative hover:text-theme-primary">
-                <i class="fa-solid fa-bell text-sm"></i>
-                <div id="notif-badge" class="absolute top-1.5 right-1.5 w-3.5 h-3.5 bg-orange-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold hidden shadow-sm">0</div>
-            </button>
+            <span id="save-text" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider italic">กำลังอัปเดตข้อมูลคลาวด์...</span>
         </div>
     </header>
 
@@ -78,7 +87,7 @@
     <main class="p-4 max-w-md mx-auto w-full safe-pb" id="app-viewport">
         <div class="flex flex-col items-center justify-center py-32 text-slate-400">
             <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-4 text-theme-primary"></i>
-            <p class="text-sm font-bold animate-pulse">กำลังกู้คืนข้อมูล Cloud...</p>
+            <p class="text-sm font-bold animate-pulse">กำลังกู้คืนข้อมูล...</p>
         </div>
     </main>
 
@@ -111,7 +120,7 @@
     </nav>
 
     <script type="module">
-        // --- DATA STATE ---
+        // --- DATA ENGINE ---
         let appState = {
             cards: [],
             installments: [],
@@ -120,9 +129,10 @@
             isAdmin: false
         };
 
-        const MASTER_STORAGE_KEY = 'MEETANG_SECURE_STORAGE_V5';
+        const MASTER_STORAGE_KEY = 'MEETANG_SECURE_STORAGE_V6';
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'meetang-pro-app';
         let db, auth, user, logoTimer;
+        let saveTimeout = null;
 
         // --- FIREBASE START ---
         async function startApp() {
@@ -159,27 +169,40 @@
             } else {
                 const local = localStorage.getItem(MASTER_STORAGE_KEY);
                 if (local) appState = JSON.parse(local);
-                else appState.cards = [{ id: 'c1', name: 'KBank', limit: 100000, date: 20 }];
-                await forceSave();
+                else {
+                    appState.cards = [{ id: 'c1', name: 'KBank', limit: 100000, date: 20 }];
+                }
+                await triggerCloudSave();
             }
             
             applyTheme(appState.theme?.color || '#f97316');
             updateUI();
         }
 
-        async function forceSave() {
-            if (!user) return;
-            updateSyncStatus(true);
-            const { fb } = window;
-            const docRef = fb.doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'appState');
+        // Optimized Save: Saves locally immediately, syncs cloud after a short delay
+        async function triggerCloudSave() {
+            // Local Save (Instant)
+            localStorage.setItem(MASTER_STORAGE_KEY, JSON.stringify(appState));
             
-            try {
-                await fb.setDoc(docRef, appState);
-                localStorage.setItem(MASTER_STORAGE_KEY, JSON.stringify(appState));
-                updateSyncStatus(false);
-            } catch (e) {
-                updateSyncStatus(false, true);
-            }
+            // Visual feedback (Show "Saving")
+            showSaveStatus('saving');
+
+            // Debounce cloud sync to handle rapid changes
+            if (saveTimeout) clearTimeout(saveTimeout);
+            
+            saveTimeout = setTimeout(async () => {
+                if (!user) return;
+                const { fb } = window;
+                const docRef = fb.doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'appState');
+                
+                try {
+                    await fb.setDoc(docRef, appState);
+                    showSaveStatus('success');
+                } catch (e) {
+                    console.error("Sync error", e);
+                    showSaveStatus('error');
+                }
+            }, 800); // Wait 0.8s of inactivity before syncing
         }
 
         function loadOffline() {
@@ -189,19 +212,31 @@
             updateUI();
         }
 
-        // --- UI UTILS ---
-        function updateSyncStatus(isSaving, hasError = false) {
-            const icon = document.getElementById('sync-icon');
-            const box = document.getElementById('sync-status');
-            if (isSaving) {
-                icon.className = "fa-solid fa-arrows-rotate fa-spin text-xs";
-                box.className = "w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-orange-400";
-            } else if (hasError) {
-                icon.className = "fa-solid fa-cloud-slash text-xs";
-                box.className = "w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-500";
-            } else {
-                icon.className = "fa-solid fa-cloud text-xs";
-                box.className = "w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-emerald-500";
+        // --- NEW STATUS UI UTILS ---
+        function showSaveStatus(type) {
+            const banner = document.getElementById('save-banner');
+            const text = document.getElementById('save-text');
+            const iconContainer = document.getElementById('save-icon-container');
+            
+            if (type === 'saving') {
+                banner.classList.add('visible');
+                text.innerText = "กำลังอัปเดตข้อมูลคลาวด์...";
+                text.className = "text-[10px] font-bold text-slate-500 uppercase tracking-wider italic";
+                iconContainer.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin text-[10px] text-orange-500"></i>';
+            } else if (type === 'success') {
+                text.innerText = "บันทึกข้อมูลเรียบร้อยแล้ว";
+                text.className = "text-[10px] font-bold text-emerald-600 uppercase tracking-wider";
+                iconContainer.innerHTML = '<i class="fa-solid fa-circle-check text-[10px] text-emerald-500"></i>';
+                
+                // Hide after 2 seconds
+                setTimeout(() => {
+                    banner.classList.remove('visible');
+                }, 2500);
+            } else if (type === 'error') {
+                text.innerText = "การซิงค์ข้อมูลขัดข้อง (ออฟไลน์)";
+                text.className = "text-[10px] font-bold text-red-500 uppercase tracking-wider";
+                iconContainer.innerHTML = '<i class="fa-solid fa-cloud-slash text-[10px] text-red-400"></i>';
+                setTimeout(() => banner.classList.remove('visible'), 4000);
             }
         }
 
@@ -225,7 +260,7 @@
                 const pass = prompt("ใส่รหัสผ่าน Admin เพื่อเปิดสิทธิ์การตั้งค่า:");
                 if (pass === "MEETANG-ADMIN") {
                     appState.isAdmin = true;
-                    forceSave();
+                    triggerCloudSave();
                     alert("เปิดสิทธิ์ Admin สำเร็จ!");
                     updateUI();
                 } else if(pass !== null) alert("รหัสผ่านไม่ถูกต้อง");
@@ -254,7 +289,7 @@
         window.setAppTheme = (c, n) => {
             appState.theme = { color: c, name: n };
             applyTheme(c);
-            forceSave();
+            triggerCloudSave();
             closeModal();
             updateUI();
         };
@@ -312,11 +347,11 @@
                 view.innerHTML = `<h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-theme-primary"></i> งบประมาณภาพรวม</h2>
                     <div class="bg-white p-5 rounded-3xl border border-theme-primary/10 shadow-sm mb-5">
                         <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center mb-1 leading-none">Total Limit</p>
-                        <h3 class="text-2xl font-black text-slate-800 text-center mb-4 leading-tight">${toCurr(totalLim)}</h3>
+                        <h3 class="text-2xl font-black text-slate-800 text-center mb-4">${toCurr(totalLim)}</h3>
                         <div class="flex justify-between items-end mb-2">
                             <div class="text-center"><p class="text-[9px] text-slate-400 font-bold uppercase leading-none">Used</p><p class="text-sm font-bold text-red-500 leading-tight">${toCurr(totalUsd)}</p></div>
                             <div class="h-10 w-[1px] bg-slate-100"></div>
-                            <div class="text-center"><p class="text-[9px] text-slate-400 font-bold uppercase leading-none">Remaining</p><p class="text-sm font-bold text-emerald-500 leading-tight">${toCurr(totalLim - totalUsd)}</p></div>
+                            <div class="text-center"><p class="text-[9px] text-slate-400 font-bold uppercase leading-none">Remaining</p><p class="text-sm font-bold text-emerald-500">${toCurr(totalLim - totalUsd)}</p></div>
                         </div>
                         <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-theme-primary transition-all duration-1000" style="width: ${totalPct}%"></div></div>
                     </div>
@@ -391,7 +426,7 @@
             });
         }
 
-        // --- FORM LOGIC ---
+        // --- ACTION HANDLERS ---
         window.renderModal = (t, h) => { document.getElementById('modal-inner').innerHTML = `<h3 class="text-lg font-bold mb-4 text-slate-800">${t}</h3>${h}`; document.getElementById('modal-screen').classList.remove('hidden'); };
         window.closeModal = () => document.getElementById('modal-screen').classList.add('hidden');
 
@@ -406,7 +441,7 @@
             const n = document.getElementById('in-n').value, l = document.getElementById('in-l').value, d = document.getElementById('in-d').value;
             if(!n || !l || !d) return alert('กรอกข้อมูลให้ครบนะคะ');
             appState.cards.push({ id: Date.now().toString(), name: n, limit: Number(l), date: Number(d) });
-            forceSave(); closeModal(); updateUI();
+            triggerCloudSave(); closeModal(); updateUI();
         };
 
         window.editCard = (id) => {
@@ -420,7 +455,7 @@
         window.updateCard = (id) => {
             const n = document.getElementById('in-n').value, l = document.getElementById('in-l').value, d = document.getElementById('in-d').value;
             const idx = appState.cards.findIndex(x => x.id === id);
-            if(idx !== -1) { appState.cards[idx] = { ...appState.cards[idx], name: n, limit: Number(l), date: Number(d) }; forceSave(); closeModal(); updateUI(); }
+            if(idx !== -1) { appState.cards[idx] = { ...appState.cards[idx], name: n, limit: Number(l), date: Number(d) }; triggerCloudSave(); closeModal(); updateUI(); }
         };
 
         window.openBudgetForm = (sid) => {
@@ -438,7 +473,7 @@
         };
         window.updBud = (id) => {
             const l = document.getElementById('in-bl').value; const idx = appState.cards.findIndex(x => x.id === id);
-            if(idx !== -1) { appState.cards[idx].limit = Number(l); forceSave(); closeModal(); updateUI(); }
+            if(idx !== -1) { appState.cards[idx].limit = Number(l); triggerCloudSave(); closeModal(); updateUI(); }
         };
 
         window.openInstForm = () => {
@@ -454,11 +489,11 @@
             const cid = document.getElementById('in-cid').value, n = document.getElementById('in-item').value, s = document.getElementById('in-s').value, d = document.getElementById('in-dr').value, a = document.getElementById('in-a').value;
             if(!n || !s || !d || !a) return alert('ข้อมูลไม่ครบนะคะ');
             appState.installments.push({ id: Date.now().toString(), cardId: cid, name: n, startMonth: s, duration: Number(d), amount: Number(a) });
-            forceSave(); closeModal(); updateUI();
+            triggerCloudSave(); closeModal(); updateUI();
         };
 
-        window.delCard = (id) => { if(confirm("ลบบัตรนี้รายการผ่อนจะหายไปด้วย ยืนยันไหม?")) { appState.cards = appState.cards.filter(x => x.id !== id); appState.installments = appState.installments.filter(x => x.cardId !== id); forceSave(); updateUI(); } };
-        window.delInst = (id) => { if(confirm("ลบรายการนี้ไหมคะ?")) { appState.installments = appState.installments.filter(x => x.id !== id); forceSave(); updateUI(); } };
+        window.delCard = (id) => { if(confirm("ลบบัตรนี้รายการผ่อนจะหายไปด้วย ยืนยันไหม?")) { appState.cards = appState.cards.filter(x => x.id !== id); appState.installments = appState.installments.filter(x => x.cardId !== id); triggerCloudSave(); updateUI(); } };
+        window.delInst = (id) => { if(confirm("ลบรายการนี้ไหมคะ?")) { appState.installments = appState.installments.filter(x => x.id !== id); triggerCloudSave(); updateUI(); } };
 
         window.openNotifications = () => {
             const today = new Date().getDate();
@@ -472,10 +507,7 @@
         };
 
         function updateNotifBadge() {
-            const count = appState.cards.filter(c => {
-                const diff = c.date - new Date().getDate();
-                return diff >= 0 && diff <= 3;
-            }).length;
+            const count = appState.cards.filter(c => { const diff = c.date - new Date().getDate(); return diff >= 0 && diff <= 3; }).length;
             const b = document.getElementById('notif-badge');
             if (b) { if (count > 0) { b.innerText = count; b.classList.remove('hidden'); } else b.classList.add('hidden'); }
         }
