@@ -515,7 +515,10 @@
                                         <div class="text-right">
                                             <p class="text-sm font-black text-theme-primary">${toCurr(i.amount)}</p>
                                             <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">${i.dur} งวด</p>
-                                            <button onclick="delInst('${i.id}')" class="text-[9px] font-bold text-red-400 hover:text-red-600 uppercase tracking-widest mt-1.5 transition-colors">ลบรายการ</button>
+                                            <div class="flex justify-end gap-3 mt-1.5">
+                                                <button onclick="editInst('${i.id}')" class="text-[9px] font-bold text-slate-400 hover:text-theme-primary uppercase tracking-widest transition-colors">แก้ไข</button>
+                                                <button onclick="delInst('${i.id}')" class="text-[9px] font-bold text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors">ลบ</button>
+                                            </div>
                                         </div>
                                     </div>
                                 `;
@@ -695,6 +698,34 @@
             if(!n || !s || !d || !a) return alert('ใส่ข้อมูลไม่ครบค่ะเบนซ์');
             state.installments.push({ id: Date.now().toString(), cardId: cid, name: n, startMonth: s, dur: Number(d), amount: Number(a) });
             closeModal(); renderViewport(); forceSave();
+        };
+
+        window.editInst = (id) => {
+            const inst = state.installments.find(x => x.id === id);
+            if(!inst) return;
+            openModal('แก้ไขรายการผ่อน', `
+                <div class="space-y-4">
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">เลือกบัตร</label><select id="in-cid" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1 appearance-none">${state.cards.map(c => `<option value="${c.id}" ${c.id === inst.cardId ? 'selected' : ''}>${c.name}</option>`).join('')}</select></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ชื่อสินค้า/รายการ</label><input id="in-item" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${inst.name}"></div>
+                    <div class="flex gap-3">
+                        <div class="flex-1"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">เริ่มงวดแรก</label><input id="in-s" type="month" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1 w-full" value="${inst.startMonth}"></div>
+                        <div class="w-24"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">จำนวนงวด</label><input id="in-dr" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${inst.dur}"></div>
+                    </div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ยอดจ่ายต่อเดือน (บาท)</label><input id="in-a" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${inst.amount}"></div>
+                    <button onclick="updateInst('${id}')" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-orange-200 mt-2 active:scale-95 transition-transform">อัปเดตรายการ</button>
+                </div>
+            `);
+        };
+
+        window.updateInst = (id) => {
+            const cid = document.getElementById('in-cid').value, n = document.getElementById('in-item').value, s = document.getElementById('in-s').value, d = document.getElementById('in-dr').value, a = document.getElementById('in-a').value;
+            if(!n || !s || !d || !a) return alert('ใส่ข้อมูลให้ครบด้วยนะคะเบนซ์');
+            
+            const idx = state.installments.findIndex(x => x.id === id);
+            if (idx !== -1) {
+                state.installments[idx] = { ...state.installments[idx], cardId: cid, name: n, startMonth: s, dur: Number(d), amount: Number(a) };
+                closeModal(); renderViewport(); forceSave();
+            }
         };
 
         // Deletes
