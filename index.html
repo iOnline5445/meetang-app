@@ -10,14 +10,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Firebase Standard Modules -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        window.fb = { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, getFirestore, doc, setDoc, getDoc, onSnapshot };
-    </script>
-
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700;800;900&display=swap');
         
@@ -64,11 +56,9 @@
     <header class="bg-white/90 backdrop-blur-md px-6 py-4 sticky top-0 z-40 flex flex-col shadow-sm border-b border-slate-100">
         <div class="flex justify-between items-center w-full">
             <div class="flex items-center gap-3">
-                <button onmousedown="startAdminTimer()" onmouseup="clearAdminTimer()" ontouchstart="startAdminTimer()" ontouchend="clearAdminTimer()" class="logo-btn transition-transform outline-none">
-                    <div class="w-10 h-10 bg-theme-primary rounded-2xl flex items-center justify-center text-white shadow-lg shadow-orange-200">
-                        <i class="fa-solid fa-cat text-xl"></i>
-                    </div>
-                </button>
+                <div class="w-10 h-10 bg-theme-primary rounded-2xl flex items-center justify-center text-white shadow-lg shadow-orange-200">
+                    <i class="fa-solid fa-cat text-xl"></i>
+                </div>
                 <div class="flex flex-col">
                     <h1 class="text-lg font-black text-slate-800 leading-none tracking-tight">MEETANG</h1>
                     <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Smart Tracker 🔒</p>
@@ -76,8 +66,8 @@
             </div>
             
             <div class="flex items-center gap-2">
-                <button id="theme-btn" onclick="showThemeMenu()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary transition-colors hidden">
-                    <i class="fa-solid fa-palette text-sm"></i>
+                <button onclick="showSettingsMenu()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary transition-colors">
+                    <i class="fa-solid fa-gear text-sm"></i>
                 </button>
                 <button onclick="showNotifs()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 relative hover:text-theme-primary transition-all">
                     <i class="fa-solid fa-bell text-sm"></i>
@@ -87,9 +77,9 @@
         </div>
         
         <!-- Status Banner -->
-        <div id="save-banner" class="flex items-center justify-center gap-2 bg-slate-50 rounded-full mx-auto border border-slate-100">
-            <span id="save-icon-box"></span>
-            <span id="save-msg" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest"></span>
+        <div id="save-banner" class="flex items-center justify-center gap-2 bg-emerald-50 rounded-full mx-auto border border-emerald-100">
+            <span id="save-icon-box"><i class="fa-solid fa-check text-[10px] text-emerald-500"></i></span>
+            <span id="save-msg" class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">บันทึกลงเครื่องเรียบร้อย</span>
         </div>
     </header>
 
@@ -129,101 +119,111 @@
         </button>
     </nav>
 
-    <script type="module">
+    <!-- Hidden Input for File Upload -->
+    <input type="file" id="importFile" class="hidden" accept=".txt,.json" onchange="importData(event)">
+
+    <script>
         // --- GLOBAL STATE ---
         let state = {
             cards: [],
             installments: [],
             tab: 'home',
             theme: { color: '#f97316' },
-            admin: false,
             weather: { temp: '--', condition: 'กำลังโหลด...', pm25: '--', location: 'พิกัดปัจจุบัน' }
         };
 
-        const DB_KEY = 'MEETANG_V8_FINAL';
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'meetang-v8-app';
-        let db, auth, user, timer, chartInstance, saveTimeout;
+        const DB_KEY = 'MEETANG_OFFLINE_V1';
+        let chartInstance, saveTimeout;
 
         // --- INITIALIZATION ---
-        async function run() {
-            // Load Local Fast
+        function run() {
+            // Load from Device LocalStorage
             const local = localStorage.getItem(DB_KEY);
             if(local) {
                 try {
                     const parsed = JSON.parse(local);
-                    state = { ...state, ...parsed };
-                    applyTheme(state.theme?.color || '#f97316');
-                } catch(e) {}
+                    state.cards = parsed.cards || [];
+                    state.installments = parsed.installments || [];
+                    if(parsed.theme) state.theme = parsed.theme;
+                    applyTheme(state.theme.color);
+                } catch(e) { console.error("Error parsing local data", e); }
             }
             
-            // Get Realtime Weather
+            // Get Realtime Weather (Independent of storage)
             fetchWeather();
             
             // Render UI immediately
             renderViewport();
-
-            // Firebase Cloud Setup
-            const { fb } = window;
-            const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-            if(!config) return; // Fallback for local testing
-
-            const app = fb.initializeApp(config);
-            auth = fb.getAuth(app);
-            db = fb.getFirestore(app);
-
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await fb.signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await fb.signInAnonymously(auth);
-                }
-                fb.onAuthStateChanged(auth, (u) => {
-                    user = u;
-                    if(user) syncCloud();
-                });
-            } catch (e) { console.error("Firebase Error", e); }
         }
 
-        async function syncCloud() {
-            const { fb } = window;
-            const ref = fb.doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'appData');
-            const snap = await fb.getDoc(ref);
-            if(snap.exists()) {
-                const cloudData = snap.data();
-                state.cards = cloudData.cards || [];
-                state.installments = cloudData.installments || [];
-                if(cloudData.theme) state.theme = cloudData.theme;
-                if(cloudData.admin) state.admin = cloudData.admin;
-                
-                localStorage.setItem(DB_KEY, JSON.stringify(state));
-                applyTheme(state.theme.color);
-                renderViewport();
-            } else {
-                // First time sync
-                forceSave();
-            }
-        }
-
+        // --- OFFLINE SAVE SYSTEM ---
         function forceSave() {
-            localStorage.setItem(DB_KEY, JSON.stringify(state));
-            updateSaveBanner('saving');
+            // Save to device storage instantly
+            localStorage.setItem(DB_KEY, JSON.stringify({
+                cards: state.cards,
+                installments: state.installments,
+                theme: state.theme
+            }));
             
-            if(saveTimeout) clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(async () => {
-                if(!user || !db) return;
-                const { fb } = window;
-                try {
-                    const ref = fb.doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'appData');
-                    await fb.setDoc(ref, {
-                        cards: state.cards,
-                        installments: state.installments,
-                        theme: state.theme,
-                        admin: state.admin
-                    });
-                    updateSaveBanner('success');
-                } catch(e) { updateSaveBanner('error'); }
-            }, 1000);
+            // Show Save Success Banner momentarily
+            showSaveBanner();
         }
+
+        function showSaveBanner() {
+            const banner = document.getElementById('save-banner');
+            banner.classList.add('visible');
+            if(saveTimeout) clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                banner.classList.remove('visible');
+            }, 2000);
+        }
+
+        // --- EXPORT & IMPORT DATA (BACKUP TO TXT) ---
+        window.exportData = () => {
+            const dataStr = JSON.stringify({
+                cards: state.cards,
+                installments: state.installments,
+                theme: state.theme
+            }, null, 2);
+            const blob = new Blob([dataStr], { type: "text/plain" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `meetang_backup_${new Date().toISOString().slice(0,10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        window.importData = (e) => {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                try {
+                    const parsed = JSON.parse(evt.target.result);
+                    if(parsed.cards !== undefined && parsed.installments !== undefined) {
+                        state.cards = parsed.cards;
+                        state.installments = parsed.installments;
+                        if(parsed.theme) state.theme = parsed.theme;
+                        
+                        forceSave();
+                        applyTheme(state.theme.color);
+                        renderViewport();
+                        closeModal();
+                        alert("กู้คืนข้อมูลสำเร็จแล้วค่ะ!");
+                    } else {
+                        alert("ไฟล์ไม่ถูกต้อง หรือข้อมูลไม่ครบถ้วนค่ะ");
+                    }
+                } catch(err) {
+                    alert("เกิดข้อผิดพลาดในการอ่านไฟล์ค่ะ");
+                }
+            };
+            reader.readAsText(file);
+            // Reset input so the same file can be selected again if needed
+            e.target.value = '';
+        };
 
         // --- WEATHER API ---
         function fetchWeather() {
@@ -246,7 +246,7 @@
                     } catch (e) { console.error('Weather error', e); }
                 }, (err) => {
                     console.warn("Location denied");
-                    state.weather.condition = "ระบุพิกัดไม่ได้";
+                    state.weather.condition = "ไม่ทราบพิกัด";
                     if(state.tab === 'home') renderViewport();
                 });
             }
@@ -267,30 +267,6 @@
             if (v <= 25) return 'text-emerald-400';
             if (v <= 50) return 'text-yellow-400';
             return 'text-rose-400';
-        }
-
-        // --- UI UPDATES & ANIMATIONS ---
-        function updateSaveBanner(status) {
-            const banner = document.getElementById('save-banner');
-            const msg = document.getElementById('save-msg');
-            const icon = document.getElementById('save-icon-box');
-            banner.classList.add('visible');
-            
-            if(status === 'saving') {
-                msg.innerText = "กำลังซิงค์คลาวด์...";
-                msg.className = "text-[10px] font-bold text-orange-500 uppercase tracking-widest";
-                icon.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-[10px] text-orange-500"></i>';
-            } else if(status === 'success') {
-                msg.innerText = "ข้อมูลปลอดภัยแล้ว";
-                msg.className = "text-[10px] font-bold text-emerald-600 uppercase tracking-widest";
-                icon.innerHTML = '<i class="fa-solid fa-check text-[10px] text-emerald-500"></i>';
-                setTimeout(() => banner.classList.remove('visible'), 2000);
-            } else {
-                msg.innerText = "เซฟลงเครื่องแล้ว (ออฟไลน์)";
-                msg.className = "text-[10px] font-bold text-red-500 uppercase tracking-widest";
-                icon.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-[10px] text-red-500"></i>';
-                setTimeout(() => banner.classList.remove('visible'), 3000);
-            }
         }
 
         function applyTheme(c) {
@@ -322,10 +298,6 @@
             const container = document.getElementById('view-container');
             if(!container) return;
             
-            // Check Admin Status
-            const themeBtn = document.getElementById('theme-btn');
-            if(state.admin) themeBtn.classList.remove('hidden');
-            
             // Check Notifications
             updateNotifs();
             
@@ -355,7 +327,7 @@
                 return sum;
             }, 0);
 
-            // Determine greeting based on time
+            // Determine generic greeting based on time
             const hour = today.getHours();
             let greeting = 'สวัสดีค่ะ';
             if(hour < 12) greeting = 'อรุณสวัสดิ์ค่ะ';
@@ -367,7 +339,7 @@
                     
                     <!-- Greeting -->
                     <div class="px-2 pt-2">
-                        <h2 class="text-2xl font-black text-slate-800 tracking-tight">${greeting} คุณเบนซ์ ✨</h2>
+                        <h2 class="text-2xl font-black text-slate-800 tracking-tight">${greeting} ✨</h2>
                         <p class="text-xs font-bold text-slate-500 mt-1">พร้อมจัดการการเงินของวันนี้หรือยังคะ?</p>
                     </div>
 
@@ -416,8 +388,8 @@
                         </div>
                         <div class="bg-emerald-50 p-4 rounded-3xl border border-emerald-100/50">
                             <i class="fa-solid fa-shield-check text-emerald-500 mb-3 text-lg"></i>
-                            <p class="text-[9px] font-bold text-emerald-600/80 uppercase tracking-widest mb-1">สถานะระบบ</p>
-                            <p class="text-sm font-bold text-slate-800">Auto-Sync On</p>
+                            <p class="text-[9px] font-bold text-emerald-600/80 uppercase tracking-widest mb-1">พื้นที่จัดเก็บ</p>
+                            <p class="text-sm font-bold text-slate-800">เครื่องของคุณ (Offline)</p>
                         </div>
                     </div>
                 </div>
@@ -428,7 +400,7 @@
             container.innerHTML = `
                 <div class="fade-in space-y-4">
                     <div class="flex justify-between items-center px-1 mb-2">
-                        <h2 class="text-lg font-black text-slate-800">บัตรเครดิตของฉัน</h2>
+                        <h2 class="text-lg font-black text-slate-800">บัตรเครดิต</h2>
                         <button onclick="openCardForm()" class="bg-theme-primary text-white w-8 h-8 rounded-full flex items-center justify-center shadow-lg shadow-orange-200/50 active:scale-90 transition-transform"><i class="fa-solid fa-plus text-sm"></i></button>
                     </div>
 
@@ -531,7 +503,7 @@
 
         function renderSummary(container) {
             if(state.installments.length === 0) {
-                container.innerHTML = `<div class="py-32 text-center text-slate-300 text-xs font-bold uppercase tracking-widest">เพิ่มรายการผ่อนเพื่อดูสรุปออโต้จ้า</div>`;
+                container.innerHTML = `<div class="py-32 text-center text-slate-300 text-xs font-bold uppercase tracking-widest">เพิ่มรายการผ่อนเพื่อดูข้อมูลค่ะ</div>`;
                 return;
             }
 
@@ -566,7 +538,7 @@
                     <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
                         <div class="p-4 bg-slate-50/50 flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
                             <span>ประจำเดือน</span>
-                            <span>ยอดจ่ายรวมออโต้</span>
+                            <span>ยอดจ่ายรวม</span>
                         </div>
                         <div class="divide-y divide-slate-50">
                             ${stats.map(s => `
@@ -655,7 +627,7 @@
         };
         window.commitCard = () => {
             const n = document.getElementById('in-n').value, l = document.getElementById('in-l').value, d = document.getElementById('in-d').value;
-            if(!n || !l || !d) return alert('กรอกข้อมูลให้ครบนะคะเบนซ์');
+            if(!n || !l || !d) return alert('กรอกข้อมูลให้ครบนะคะ');
             state.cards.push({ id: Date.now().toString(), name: n, limit: Number(l), date: Number(d) });
             closeModal(); renderViewport(); forceSave();
         };
@@ -679,11 +651,11 @@
 
         // Installment Form
         window.openInstForm = () => {
-            if(state.cards.length === 0) return alert('รบกวนเพิ่มบัตรก่อนใช้งานนะคะเบนซ์');
+            if(state.cards.length === 0) return alert('รบกวนเพิ่มบัตรก่อนใช้งานนะคะ');
             openModal('เพิ่มรายการผ่อน', `
                 <div class="space-y-4">
                     <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">เลือกบัตร</label><select id="in-cid" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1 appearance-none">${state.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
-                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ชื่อสินค้า/รายการ</label><input id="in-item" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="เช่น iPhone 15"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ชื่อสินค้า/รายการ</label><input id="in-item" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="เช่น เครื่องฟอกอากาศ"></div>
                     <div class="flex gap-3">
                         <div class="flex-1"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">เริ่มงวดแรก</label><input id="in-s" type="month" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1 w-full"></div>
                         <div class="w-24"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">จำนวนงวด</label><input id="in-dr" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="10"></div>
@@ -695,7 +667,7 @@
         };
         window.commitInst = () => {
             const cid = document.getElementById('in-cid').value, n = document.getElementById('in-item').value, s = document.getElementById('in-s').value, d = document.getElementById('in-dr').value, a = document.getElementById('in-a').value;
-            if(!n || !s || !d || !a) return alert('ใส่ข้อมูลไม่ครบค่ะเบนซ์');
+            if(!n || !s || !d || !a) return alert('ใส่ข้อมูลให้ครบด้วยนะคะ');
             state.installments.push({ id: Date.now().toString(), cardId: cid, name: n, startMonth: s, dur: Number(d), amount: Number(a) });
             closeModal(); renderViewport(); forceSave();
         };
@@ -719,7 +691,7 @@
 
         window.updateInst = (id) => {
             const cid = document.getElementById('in-cid').value, n = document.getElementById('in-item').value, s = document.getElementById('in-s').value, d = document.getElementById('in-dr').value, a = document.getElementById('in-a').value;
-            if(!n || !s || !d || !a) return alert('ใส่ข้อมูลให้ครบด้วยนะคะเบนซ์');
+            if(!n || !s || !d || !a) return alert('ใส่ข้อมูลให้ครบด้วยนะคะ');
             
             const idx = state.installments.findIndex(x => x.id === id);
             if (idx !== -1) {
@@ -732,32 +704,41 @@
         window.delCard = (id) => { if(confirm("ลบบัตรนี้รายการผ่อนจะหายเกลี้ยงเลยนะคะ ยืนยันไหม?")) { state.cards = state.cards.filter(x => x.id !== id); state.installments = state.installments.filter(x => x.cardId !== id); renderViewport(); forceSave(); } };
         window.delInst = (id) => { if(confirm("ลบรายการผ่อนนี้นะคะ?")) { state.installments = state.installments.filter(x => x.id !== id); renderViewport(); forceSave(); } };
 
-        // --- ADMIN & THEME ---
-        window.startAdminTimer = () => {
-            timer = setTimeout(() => {
-                const pass = prompt("เข้าสู่โหมด Admin (ใส่รหัสผ่าน):");
-                if(pass === "MEETANG-ADMIN") {
-                    state.admin = true;
-                    forceSave();
-                    alert("เปิดสิทธิ์ Admin แล้วค่ะ!");
-                    renderViewport();
-                } else if(pass !== null) alert("รหัสผิดค่ะ!");
-            }, 2000);
-        };
-        window.clearAdminTimer = () => clearTimeout(timer);
+        // --- SETTINGS & BACKUP ---
+        window.showSettingsMenu = () => {
+            openModal('ตั้งค่าแอปพลิเคชัน', `
+                <div class="space-y-6">
+                    <!-- Themes -->
+                    <div>
+                        <h4 class="text-sm font-bold text-slate-800 mb-3">เปลี่ยนสีสันของแอป</h4>
+                        <div class="grid grid-cols-3 gap-3">
+                            ${[
+                                {c: '#f97316', n: 'Orange'}, {c: '#3b82f6', n: 'Blue'}, {c: '#10b981', n: 'Green'}, 
+                                {c: '#8b5cf6', n: 'Purple'}, {c: '#f43f5e', n: 'Rose'}, {c: '#0f172a', n: 'Dark'}
+                            ].map(t => `
+                                <button onclick="setTheme('${t.c}')" class="h-16 rounded-2xl shadow-sm border-2 ${state.theme.color === t.c ? 'border-slate-800 scale-95' : 'border-transparent'} flex flex-col items-center justify-center gap-1.5 transition-all" style="background-color: ${t.c}10">
+                                    <div class="w-5 h-5 rounded-full" style="background-color: ${t.c}"></div>
+                                    <span class="text-[9px] font-bold text-slate-600 uppercase">${t.n}</span>
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
 
-        window.showThemeMenu = () => {
-            openModal('เปลี่ยนสีสันของแอป', `
-                <div class="grid grid-cols-3 gap-3">
-                    ${[
-                        {c: '#f97316', n: 'Orange'}, {c: '#3b82f6', n: 'Blue'}, {c: '#10b981', n: 'Green'}, 
-                        {c: '#8b5cf6', n: 'Purple'}, {c: '#f43f5e', n: 'Rose'}, {c: '#0f172a', n: 'Dark'}
-                    ].map(t => `
-                        <button onclick="setTheme('${t.c}')" class="h-20 rounded-2xl shadow-sm border-2 ${state.theme.color === t.c ? 'border-slate-800 scale-95' : 'border-transparent'} flex flex-col items-center justify-center gap-2 transition-all" style="background-color: ${t.c}10">
-                            <div class="w-6 h-6 rounded-full" style="background-color: ${t.c}"></div>
-                            <span class="text-[9px] font-bold text-slate-600 uppercase">${t.n}</span>
-                        </button>
-                    `).join('')}
+                    <hr class="border-slate-100">
+
+                    <!-- Backup / Restore -->
+                    <div>
+                        <h4 class="text-sm font-bold text-slate-800 mb-1">จัดการข้อมูล (Backup)</h4>
+                        <p class="text-[10px] text-slate-400 mb-3">ข้อมูลถูกบันทึกในเครื่อง หากต้องการเปลี่ยนเครื่อง กรุณาเซฟเป็นไฟล์เก็บไว้ค่ะ</p>
+                        <div class="flex gap-2">
+                            <button onclick="exportData()" class="flex-1 p-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold text-slate-600 hover:bg-theme-primary/10 hover:text-theme-primary transition-colors flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-download"></i> เซฟเป็นไฟล์
+                            </button>
+                            <button onclick="document.getElementById('importFile').click()" class="flex-1 p-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold text-slate-600 hover:bg-theme-primary/10 hover:text-theme-primary transition-colors flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-upload"></i> โหลดจากไฟล์
+                            </button>
+                        </div>
+                    </div>
                 </div>
             `);
         };
@@ -772,8 +753,8 @@
             });
             openModal('การแจ้งเตือน', `
                 <div class="space-y-3">
-                    ${list.length === 0 ? '<p class="text-center text-slate-400 py-8 text-xs font-bold uppercase tracking-widest">ยังไม่มีเรื่องด่วนค่ะเบนซ์ ✌️</p>' : list.map(c => `
-                        <div class="p-4 rounded-2xl bg-slate-50 flex items-center gap-4">
+                    ${list.length === 0 ? '<p class="text-center text-slate-400 py-8 text-xs font-bold uppercase tracking-widest">ยังไม่มีเรื่องด่วนค่ะ ✌️</p>' : list.map(c => `
+                        <div class="p-4 rounded-2xl bg-slate-50 flex items-center gap-4 border border-slate-100">
                             <div class="w-10 h-10 bg-theme-primary/10 rounded-full flex items-center justify-center text-theme-primary"><i class="fa-solid fa-clock"></i></div>
                             <div>
                                 <p class="text-sm font-black text-slate-800">บัตร ${c.name}</p>
