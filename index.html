@@ -34,6 +34,7 @@
         
         .card-gradient { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); }
         .weather-gradient { background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); }
+        .ai-gradient { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); }
         
         .safe-pb { padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 100px); }
         
@@ -48,6 +49,13 @@
         /* Save Status Banner */
         #save-banner { transition: all 0.3s ease; max-height: 0; opacity: 0; overflow: hidden; }
         #save-banner.visible { max-height: 40px; opacity: 1; margin-top: 8px; padding: 4px 16px; }
+
+        .shimmer {
+            background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0) 100%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
     </style>
 </head>
 <body class="min-h-screen relative">
@@ -92,7 +100,7 @@
     </main>
 
     <!-- Modal Overlay -->
-    <div id="modal-overlay" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex flex-col justify-end backdrop-blur-sm">
+    <div id="modal-overlay" onclick="if(event.target.id === 'modal-overlay') closeModal()" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex flex-col justify-end backdrop-blur-sm">
         <div class="bg-white w-full max-w-md mx-auto rounded-t-[2.5rem] p-6 bottom-sheet shadow-2xl relative max-h-[85vh] overflow-y-auto">
             <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6" onclick="closeModal()"></div>
             <div id="modal-content"></div>
@@ -123,16 +131,58 @@
     <input type="file" id="importFile" class="hidden" accept=".txt,.json" onchange="importData(event)">
 
     <script>
+        // --- GEMINI API ENGINE ---
+        const apiKey = ""; // Execution environment injects API key here
+
+        async function fetchGeminiAPI(prompt, expectJson = false) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { 
+                    parts: [{ text: "You are 'Kae' (เก๋), a friendly, expert Thai financial advisor assistant inside an app named Meetang. Reply briefly and naturally in Thai. Use emojis to make it engaging." }] 
+                }
+            };
+            if (expectJson) {
+                payload.generationConfig = { responseMimeType: "application/json" };
+            }
+
+            const delays = [1000, 2000, 4000, 8000, 16000];
+            let attempt = 0;
+
+            while (attempt < 5) {
+                try {
+                    const response = await fetch(url, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    return expectJson ? JSON.parse(text) : text;
+                } catch (error) {
+                    if (attempt === 4) {
+                        console.error("Gemini API Failed after retries:", error);
+                        return null;
+                    }
+                    await new Promise(r => setTimeout(r, delays[attempt]));
+                    attempt++;
+                }
+            }
+        }
+
         // --- GLOBAL STATE ---
         let state = {
             cards: [],
             installments: [],
             tab: 'home',
             theme: { color: '#f97316' },
-            weather: { temp: '--', condition: 'กำลังโหลด...', pm25: '--', location: 'พิกัดปัจจุบัน' }
+            weather: { temp: '--', condition: 'กำลังโหลด...', pm25: '--', location: 'พิกัดปัจจุบัน' },
+            settings: { enableNotif: true },
+            lastBackup: ''
         };
 
-        const DB_KEY = 'MEETANG_OFFLINE_V1';
+        const DB_KEY = 'MEETANG_OFFLINE_V2';
         let chartInstance, saveTimeout;
 
         // --- INITIALIZATION ---
@@ -145,6 +195,9 @@
                     state.cards = parsed.cards || [];
                     state.installments = parsed.installments || [];
                     if(parsed.theme) state.theme = parsed.theme;
+                    if(parsed.settings !== undefined) state.settings = parsed.settings;
+                    if(parsed.lastBackup !== undefined) state.lastBackup = parsed.lastBackup;
+                    
                     applyTheme(state.theme.color);
                 } catch(e) { console.error("Error parsing local data", e); }
             }
@@ -162,7 +215,9 @@
             localStorage.setItem(DB_KEY, JSON.stringify({
                 cards: state.cards,
                 installments: state.installments,
-                theme: state.theme
+                theme: state.theme,
+                settings: state.settings,
+                lastBackup: state.lastBackup
             }));
             
             // Show Save Success Banner momentarily
@@ -183,7 +238,9 @@
             const dataStr = JSON.stringify({
                 cards: state.cards,
                 installments: state.installments,
-                theme: state.theme
+                theme: state.theme,
+                settings: state.settings,
+                lastBackup: state.lastBackup
             }, null, 2);
             const blob = new Blob([dataStr], { type: "text/plain" });
             const url = URL.createObjectURL(blob);
@@ -194,6 +251,11 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+            
+            // Update last backup status
+            state.lastBackup = 'เซฟเมื่อ ' + new Date().toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+            forceSave();
+            if(state.tab === 'home') renderViewport();
         };
 
         window.importData = (e) => {
@@ -207,6 +269,9 @@
                         state.cards = parsed.cards;
                         state.installments = parsed.installments;
                         if(parsed.theme) state.theme = parsed.theme;
+                        if(parsed.settings !== undefined) state.settings = parsed.settings;
+                        
+                        state.lastBackup = 'โหลดเมื่อ ' + new Date().toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
                         
                         forceSave();
                         applyTheme(state.theme.color);
@@ -334,6 +399,35 @@
             else if(hour < 18) greeting = 'สวัสดีตอนบ่ายค่ะ';
             else greeting = 'สวัสดีตอนค่ำค่ะ';
 
+            // Generate Alert Card based on settings
+            let alertCardHtml = '';
+            if (state.settings.enableNotif) {
+                const day = today.getDate();
+                const urgentCards = state.cards.filter(c => {
+                    const diff = c.date - day;
+                    return diff >= 0 && diff <= 3;
+                });
+                
+                const alertText = urgentCards.length > 0 ? `บัตร ${urgentCards[0].name}` : 'ยังไม่มีดิวใกล้ชำระ';
+                const alertColor = urgentCards.length > 0 ? 'rose' : 'orange';
+                
+                alertCardHtml = `
+                    <div class="bg-${alertColor}-50 p-4 rounded-3xl border border-${alertColor}-100/50">
+                        <i class="fa-solid fa-clock text-${alertColor}-500 mb-3 text-lg"></i>
+                        <p class="text-[9px] font-bold text-${alertColor}-600/80 uppercase tracking-widest mb-1">บัตรใกล้ตัดรอบ</p>
+                        <p class="text-sm font-bold text-slate-800 truncate">${alertText}</p>
+                    </div>
+                `;
+            } else {
+                alertCardHtml = `
+                    <div class="bg-slate-50 p-4 rounded-3xl border border-slate-100/50">
+                        <i class="fa-solid fa-bell-slash text-slate-400 mb-3 text-lg"></i>
+                        <p class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">แจ้งเตือน</p>
+                        <p class="text-sm font-bold text-slate-400">ปิดการแจ้งเตือน</p>
+                    </div>
+                `;
+            }
+
             container.innerHTML = `
                 <div class="space-y-5 fade-in">
                     
@@ -381,15 +475,11 @@
 
                     <!-- Mini Alerts -->
                     <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-orange-50 p-4 rounded-3xl border border-orange-100/50">
-                            <i class="fa-solid fa-clock text-orange-500 mb-3 text-lg"></i>
-                            <p class="text-[9px] font-bold text-orange-600/80 uppercase tracking-widest mb-1">บัตรใกล้ตัดรอบ</p>
-                            <p class="text-sm font-bold text-slate-800 truncate">${state.cards.length > 0 ? state.cards[0].name : 'ยังไม่มีข้อมูล'}</p>
-                        </div>
+                        ${alertCardHtml}
                         <div class="bg-emerald-50 p-4 rounded-3xl border border-emerald-100/50">
-                            <i class="fa-solid fa-shield-check text-emerald-500 mb-3 text-lg"></i>
-                            <p class="text-[9px] font-bold text-emerald-600/80 uppercase tracking-widest mb-1">พื้นที่จัดเก็บ</p>
-                            <p class="text-sm font-bold text-slate-800">เครื่องของคุณ (Offline)</p>
+                            <i class="fa-solid fa-folder-open text-emerald-500 mb-3 text-lg"></i>
+                            <p class="text-[9px] font-bold text-emerald-600/80 uppercase tracking-widest mb-1">สถานะแฟ้มข้อมูล</p>
+                            <p class="text-[10px] font-bold text-slate-800 leading-tight">${state.lastBackup || 'ยังไม่เคยสร้างไฟล์'}</p>
                         </div>
                     </div>
                 </div>
@@ -457,6 +547,16 @@
         }
 
         function renderInstallments(container) {
+            // Calculate Current Month Total
+            const today = new Date();
+            const thisYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+            const currentMonthTotal = state.installments.reduce((sum, item) => {
+                const start = item.startMonth;
+                const end = shiftMonthStr(item.startMonth, item.dur - 1);
+                if (thisYm >= start && thisYm <= end) return sum + item.amount;
+                return sum;
+            }, 0);
+
             container.innerHTML = `
                 <div class="fade-in space-y-4">
                     <div class="flex justify-between items-center px-1 mb-2">
@@ -464,8 +564,19 @@
                         <button onclick="openInstForm()" class="bg-theme-primary text-white w-8 h-8 rounded-full flex items-center justify-center shadow-lg shadow-orange-200/50 active:scale-90 transition-transform"><i class="fa-solid fa-plus text-sm"></i></button>
                     </div>
 
+                    <!-- ยอดรวมการผ่อนเดือนนี้ -->
+                    <div class="bg-theme-primary/10 p-5 rounded-[2rem] border border-theme-primary/20 flex justify-between items-center shadow-sm">
+                        <div>
+                            <p class="text-[10px] font-bold text-theme-primary uppercase tracking-widest mb-0.5"><i class="fa-solid fa-calendar-day mr-1.5"></i>ยอดผ่อนเดือนปัจจุบัน</p>
+                            <p class="text-3xl font-black text-theme-primary">${toCurr(currentMonthTotal)}</p>
+                        </div>
+                        <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center text-theme-primary shadow-sm">
+                            <i class="fa-solid fa-receipt text-xl"></i>
+                        </div>
+                    </div>
+
                     ${state.installments.length === 0 ? `
-                        <div class="text-center py-20 bg-white rounded-3xl border border-slate-100">
+                        <div class="text-center py-10 bg-white rounded-3xl border border-slate-100">
                             <i class="fa-solid fa-cart-shopping text-4xl text-slate-200 mb-3"></i>
                             <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">ยังไม่มีรายการผ่อนค่ะ</p>
                         </div>
@@ -551,6 +662,13 @@
                             `).join('')}
                         </div>
                     </div>
+                    
+                    <!-- AI Advisor Button -->
+                    <button onclick="askAIAdvisor()" class="w-full py-4 mt-2 ai-gradient text-white rounded-3xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 relative overflow-hidden active:scale-95 transition-transform">
+                        <div class="absolute inset-0 shimmer"></div>
+                        <i class="fa-solid fa-wand-magic-sparkles relative z-10"></i> 
+                        <span class="relative z-10">ให้ AI เก๋ ช่วยวิเคราะห์การเงิน</span>
+                    </button>
                 </div>
             `;
 
@@ -606,6 +724,62 @@
             const d = new Date(y, m - 1 + n, 1);
             return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
         }
+
+        // --- AI ADVISOR ---
+        window.askAIAdvisor = async () => {
+            if(state.installments.length === 0 && state.cards.length === 0) {
+                return alert('เบนซ์ต้องเพิ่มข้อมูลบัตรหรือรายการผ่อนก่อนนะคะ เก๋ถึงจะวิเคราะห์ให้ได้ค่ะ 😅');
+            }
+
+            openModal('✨ ผู้ช่วย AI วิเคราะห์การเงิน', `
+                <div class="py-10 flex flex-col items-center justify-center text-indigo-500">
+                    <i class="fa-solid fa-wand-magic-sparkles text-5xl animate-bounce mb-4"></i>
+                    <p class="text-sm font-bold animate-pulse text-center mt-2">เก๋กำลังประมวลผลข้อมูลการเงิน<br>ให้เบนซ์อยู่นะคะ รอแป๊บนึงน้า...</p>
+                </div>
+            `);
+
+            const totalDebt = state.installments.reduce((sum, i) => sum + (i.amount * i.dur), 0);
+            const today = new Date();
+            const thisYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+            const thisMonthPay = state.installments.reduce((sum, item) => {
+                const start = item.startMonth;
+                const end = shiftMonthStr(item.startMonth, item.dur - 1);
+                if (thisYm >= start && thisYm <= end) return sum + item.amount;
+                return sum;
+            }, 0);
+
+            const prompt = `
+                คุณคือ "เก๋" ผู้ช่วยส่วนตัวทางการเงินที่เชี่ยวชาญและเป็นกันเอง คุยเหมือนเพื่อนสนิทกับผู้ใช้ชื่อ "เบนซ์"
+                ข้อมูลการเงินของเบนซ์ตอนนี้:
+                - มีบัตรเครดิต ${state.cards.length} ใบ
+                - มีรายการผ่อนชำระ ${state.installments.length} รายการ
+                - ยอดที่ต้องจ่ายเฉพาะเดือนนี้ประมาณ ${thisMonthPay} บาท
+                - ยอดหนี้คงค้างทั้งหมดประมาณ ${totalDebt} บาท
+
+                ช่วยวิเคราะห์สั้นๆ กระชับ เป็นกันเอง (ไม่เกิน 4-5 บรรทัด) ว่าสถานะทางการเงินตอนนี้เป็นอย่างไร ให้กำลังใจ และแนะนำทริคการเงินหรือสุขภาพนิดหน่อยค่ะ (เช่น เตือนเรื่องดื่มน้ำ พักผ่อน หรือทานอาหารเสริมสุขภาพของแอมเวย์เพื่อดูแลตัวเอง)
+            `;
+
+            const response = await fetchGeminiAPI(prompt);
+
+            if(response) {
+                const formattedResponse = response.replace(/\n/g, '<br>');
+                openModal('✨ คำแนะนำจาก AI เก๋', `
+                    <div class="space-y-4">
+                        <div class="p-5 bg-indigo-50 rounded-3xl border border-indigo-100 text-sm text-slate-700 leading-relaxed font-medium">
+                            ${formattedResponse}
+                        </div>
+                        <button onclick="closeModal()" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-orange-200 mt-2 active:scale-95 transition-transform">ขอบคุณจ้า ปิดเลย</button>
+                    </div>
+                `);
+            } else {
+                openModal('❌ เกิดข้อผิดพลาด', `
+                    <div class="text-center py-6">
+                        <p class="text-slate-500 text-sm font-bold">ขออภัยค่ะ ระบบ AI ขัดข้องชั่วคราว ลองใหม่อีกครั้งนะคะ</p>
+                        <button onclick="closeModal()" class="mt-6 px-8 py-3 bg-slate-200 rounded-xl font-bold text-slate-600 active:scale-95 transition-transform">ปิดหน้าต่าง</button>
+                    </div>
+                `);
+            }
+        };
 
         // --- MODALS & FORMS ---
         window.closeModal = () => document.getElementById('modal-overlay').classList.add('hidden');
@@ -708,6 +882,22 @@
         window.showSettingsMenu = () => {
             openModal('ตั้งค่าแอปพลิเคชัน', `
                 <div class="space-y-6">
+                    <!-- Notifications Toggle -->
+                    <div>
+                        <h4 class="text-sm font-bold text-slate-800 mb-3">การแจ้งเตือน</h4>
+                        <div class="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <div>
+                                <p class="text-xs font-bold text-slate-700">เตือนวันชำระบัตรเครดิต</p>
+                                <p class="text-[9px] text-slate-400 mt-0.5">แจ้งเตือนล่วงหน้า 3 วันก่อนวันตัดรอบ</p>
+                            </div>
+                            <button onclick="toggleNotif()" class="w-12 h-6 rounded-full transition-colors relative shadow-inner ${state.settings.enableNotif ? 'bg-emerald-500' : 'bg-slate-300'}">
+                                <div class="w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all shadow-sm ${state.settings.enableNotif ? 'right-0.5' : 'left-0.5'}"></div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <hr class="border-slate-100">
+
                     <!-- Themes -->
                     <div>
                         <h4 class="text-sm font-bold text-slate-800 mb-3">เปลี่ยนสีสันของแอป</h4>
@@ -739,13 +929,28 @@
                             </button>
                         </div>
                     </div>
+                    
+                    <button onclick="closeModal()" class="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold uppercase tracking-widest text-sm mt-4 active:scale-95 transition-transform">ปิดหน้าต่างนี้</button>
                 </div>
             `);
         };
+        
         window.setTheme = (c) => { applyTheme(c); forceSave(); closeModal(); renderViewport(); };
+        
+        window.toggleNotif = () => { 
+            state.settings.enableNotif = !state.settings.enableNotif; 
+            forceSave(); 
+            showSettingsMenu(); // Refresh the settings modal
+            renderViewport();   // Refresh the home screen alerts
+        };
 
         // --- NOTIFICATIONS ---
         window.showNotifs = () => {
+            if(!state.settings.enableNotif) {
+                openModal('การแจ้งเตือน', `<p class="text-center text-slate-400 py-8 text-xs font-bold uppercase tracking-widest">คุณได้ปิดการแจ้งเตือนไว้ค่ะ 🔕</p>`);
+                return;
+            }
+
             const today = new Date().getDate();
             const list = state.cards.filter(c => {
                 const diff = c.date - today;
@@ -762,14 +967,24 @@
                             </div>
                         </div>
                     `).join('')}
+                    
+                    <button onclick="closeModal()" class="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold uppercase tracking-widest text-sm mt-4 active:scale-95 transition-transform">ปิดหน้าต่างนี้</button>
                 </div>
             `);
         };
+        
         function updateNotifs() {
+            const dot = document.getElementById('notif-dot');
+            if(!dot) return;
+            
+            if(!state.settings.enableNotif) {
+                dot.classList.add('hidden');
+                return;
+            }
+
             const today = new Date().getDate();
             const has = state.cards.some(c => (c.date - today) >= 0 && (c.date - today) <= 3);
-            const dot = document.getElementById('notif-dot');
-            if(dot) { if(has) dot.classList.remove('hidden'); else dot.classList.add('hidden'); }
+            if(has) dot.classList.remove('hidden'); else dot.classList.add('hidden');
         }
 
         // Start Application
