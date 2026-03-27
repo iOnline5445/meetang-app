@@ -1,518 +1,421 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Meetang - Smart Tracker Pro</title>
-    <!-- Dependencies -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
+} from 'recharts';
+import { 
+  CreditCard, CalendarDays, PieChart, Plus, Trash2, 
+  CheckCircle2, Circle, LayoutDashboard, Wallet, ChevronRight,
+  Sun, CloudRain, Wind, Thermometer, MapPin, AlertCircle, TrendingDown
+} from 'lucide-react';
+
+// --- Helper Functions ---
+const addMonths = (yyyyMM, monthsToAdd) => {
+  const [year, month] = yyyMM.split('-').map(Number);
+  const date = new Date(year, month - 1 + monthsToAdd, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const formatMonthYear = (yyyyMM) => {
+  if (!yyyyMM) return '';
+  const [year, month] = yyyMM.split('-');
+  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  return `${months[parseInt(month, 10) - 1]} ${year.substring(2)}`;
+};
+
+// --- Main Application ---
+export default function App() {
+  const [activeTab, setActiveTab] = useState('home');
+  
+  // Data State
+  const [cards, setCards] = useState([]);
+  const [installments, setInstallments] = useState([]);
+  const [weather, setWeather] = useState({ temp: '--', condition: 'กำลังโหลด...', pm25: '--', location: 'ตรวจหาพิกัด...' });
+
+  // Forms Visibility
+  const [showCardForm, setShowCardForm] = useState(false);
+  const [showInstForm, setShowInstForm] = useState(false);
+
+  // New Data Models
+  const [newCard, setNewCard] = useState({ name: '', cutOffDate: '', creditLimit: '' });
+  const [newInst, setNewInst] = useState({ cardId: '', name: '', startMonth: '', installments: '', monthlyAmount: '' });
+
+  // 1. Initial Load & Persistence
+  useEffect(() => {
+    const savedCards = localStorage.getItem('MT_CARDS');
+    const savedInsts = localStorage.getItem('MT_INSTS');
     
-    <!-- Firebase Libraries -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        window.fb = { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, getFirestore, doc, setDoc, getDoc, onSnapshot };
-    </script>
+    if (savedCards) setCards(JSON.parse(savedCards));
+    if (savedInsts) setInstallments(JSON.parse(savedInsts));
 
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap');
-        :root {
-            --primary: #f97316;
-            --primary-light: #fff7ed;
+    // Fetch Weather & AQI based on location
+    fetchRealtimeEnvironment();
+  }, []);
+
+  // 2. Auto Save Logic
+  useEffect(() => {
+    localStorage.setItem('MT_CARDS', JSON.stringify(cards));
+    localStorage.setItem('MT_INSTS', JSON.stringify(installments));
+  }, [cards, installments]);
+
+  const fetchRealtimeEnvironment = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        try {
+          // ใช้ Open-Meteo (Free API - No Key Required for basic use)
+          const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&air_quality=pm2_5`);
+          const data = await res.json();
+          const pmRes = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&current=pm2_5`);
+          const pmData = await pmRes.json();
+
+          setWeather({
+            temp: data.current.temperature_2m.toFixed(1),
+            condition: getWeatherDesc(data.current.weather_code),
+            pm25: pmData.current.pm2_5.toFixed(1),
+            location: 'พิกัดปัจจุบัน'
+          });
+        } catch (e) {
+          console.error('Weather fetch failed', e);
         }
-        body { font-family: 'Kanit', sans-serif; -webkit-tap-highlight-color: transparent; transition: background-color 0.3s; }
-        
-        .text-theme-primary { color: var(--primary); }
-        .bg-theme-primary { background-color: var(--primary); }
-        .border-theme-primary { border-color: var(--primary); }
-        .tab-active { color: var(--primary); border-top: 2px solid var(--primary); } 
-        .tab-inactive { color: #94a3b8; border-top: 2px solid transparent; }
-        
-        .card-navy { background: linear-gradient(135deg, #2A3441 0%, #1A222C 100%); }
-        .safe-pb { padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 85px); }
-        .bottom-sheet { animation: slideUp 0.3s ease-out; }
-        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        
-        .status-safe { color: #10b981; }
-        .status-warning { color: #f59e0b; }
-        .status-danger { color: #ef4444; }
+      });
+    }
+  };
 
-        .logo-hint:active { transform: scale(1.1); transition: 0.1s; }
-        
-        /* New Save Status Animation */
-        #save-banner { transition: all 0.3s ease-in-out; height: 0; opacity: 0; overflow: hidden; }
-        #save-banner.visible { height: 28px; opacity: 1; margin-top: 4px; }
-    </style>
-</head>
-<body class="bg-slate-50 min-h-screen relative overflow-x-hidden">
+  const getWeatherDesc = (code) => {
+    if (code === 0) return 'ท้องฟ้าแจ่มใส';
+    if (code <= 3) return 'เมฆบางส่วน';
+    if (code >= 45 && code <= 48) return 'หมอกลง';
+    if (code >= 51) return 'ฝนตก';
+    return 'อากาศแปรปรวน';
+  };
 
-    <!-- Header Section -->
-    <header class="bg-white px-5 py-4 sticky top-0 z-40 flex flex-col shadow-sm">
-        <div class="flex justify-between items-center w-full">
-            <div class="flex items-center gap-2.5">
-                <button onmousedown="startLogoPress()" onmouseup="endLogoPress()" ontouchstart="startLogoPress()" ontouchend="endLogoPress()" class="logo-hint outline-none">
-                    <i class="fa-solid fa-cat text-theme-primary text-2xl drop-shadow-sm"></i>
-                </button>
-                <div>
-                    <h1 class="text-xl font-bold text-slate-800 flex items-baseline gap-1.5 leading-tight">
-                        Meetang <span class="text-[9px] font-normal text-slate-400 border-l pl-1.5 border-slate-200 uppercase tracking-widest leading-none">Smart Tracker</span>
-                    </h1>
-                    <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest leading-none">บัญชีผ่อนส่วนตัวของคุณ 🔒</p>
-                </div>
-            </div>
-            <div class="flex items-center gap-2">
-                <button id="theme-btn" onclick="openThemeMenu()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary transition-colors hidden">
-                    <i class="fa-solid fa-palette text-sm"></i>
-                </button>
-                <button onclick="openNotifications()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 relative hover:text-theme-primary">
-                    <i class="fa-solid fa-bell text-sm"></i>
-                    <div id="notif-badge" class="absolute top-1.5 right-1.5 w-3.5 h-3.5 bg-orange-500 rounded-full text-[7px] text-white flex items-center justify-center font-bold hidden shadow-sm">0</div>
-                </button>
-            </div>
-        </div>
-        
-        <!-- Clear Save Status Banner -->
-        <div id="save-banner" class="flex items-center justify-center gap-2 bg-slate-50 rounded-full mx-auto px-4">
-            <div id="save-icon-container">
-                <i class="fa-solid fa-cloud-arrow-up text-[10px] text-orange-500 animate-bounce"></i>
-            </div>
-            <span id="save-text" class="text-[10px] font-bold text-slate-500 uppercase tracking-wider italic">กำลังอัปเดตข้อมูลคลาวด์...</span>
-        </div>
-    </header>
+  const getPMColor = (val) => {
+    if (val <= 15) return 'text-emerald-500';
+    if (val <= 37) return 'text-yellow-500';
+    return 'text-rose-500';
+  };
 
-    <!-- App Viewport -->
-    <main class="p-4 max-w-md mx-auto w-full safe-pb" id="app-viewport">
-        <div class="flex flex-col items-center justify-center py-32 text-slate-400">
-            <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-4 text-theme-primary"></i>
-            <p class="text-sm font-bold animate-pulse">กำลังกู้คืนข้อมูล...</p>
-        </div>
-    </main>
+  // --- Handlers ---
+  const addCard = (e) => {
+    e.preventDefault();
+    const card = { ...newCard, id: Date.now().toString(), creditLimit: Number(newCard.creditLimit) };
+    setCards([...cards, card]);
+    setNewCard({ name: '', cutOffDate: '', creditLimit: '' });
+    setShowCardForm(false);
+  };
 
-    <!-- Modal Form -->
-    <div id="modal-screen" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex flex-col justify-end transition-opacity">
-        <div class="bg-white w-full max-w-md mx-auto rounded-t-[2rem] p-6 bottom-sheet shadow-2xl relative max-h-[90vh] overflow-y-auto">
-            <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-5" onclick="closeModal()"></div>
-            <div id="modal-inner"></div>
+  const addInst = (e) => {
+    e.preventDefault();
+    const inst = { ...newInst, id: Date.now().toString(), installments: Number(newInst.installments), monthlyAmount: Number(newInst.monthlyAmount) };
+    setInstallments([...installments, inst]);
+    setNewInst({ cardId: '', name: '', startMonth: '', installments: '', monthlyAmount: '' });
+    setShowInstForm(false);
+  };
+
+  const delCard = (id) => {
+    if(window.confirm('ลบบัตรนี้รายการผ่อนจะหายหมดเลยนะคะ ยืนยันไหม?')) {
+      setCards(cards.filter(c => c.id !== id));
+      setInstallments(installments.filter(i => i.cardId !== id));
+    }
+  };
+
+  // --- Analytics ---
+  const currentMonthTotal = useMemo(() => {
+    const today = new Date();
+    const thisYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    return installments.reduce((sum, item) => {
+      const start = item.startMonth;
+      const end = addMonths(item.startMonth, item.installments - 1);
+      if (thisYm >= start && thisYm <= end) return sum + item.monthlyAmount;
+      return sum;
+    }, 0);
+  }, [installments]);
+
+  // --- Render Functions ---
+
+  const renderHome = () => (
+    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Weather Widget */}
+      <div className="bg-gradient-to-br from-indigo-600 to-blue-500 p-6 rounded-3xl text-white shadow-xl">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <p className="text-xs opacity-80 flex items-center gap-1"><MapPin size={10} /> {weather.location}</p>
+            <h2 className="text-4xl font-bold mt-1">{weather.temp}°C</h2>
+          </div>
+          <Sun className="w-12 h-12 text-yellow-300" />
         </div>
+        <div className="flex justify-between items-center bg-white/10 p-3 rounded-2xl backdrop-blur-sm">
+          <div className="flex items-center gap-2">
+            <Wind size={16} className="text-blue-200" />
+            <span className="text-xs">PM 2.5: <b className={getPMColor(weather.pm25)}>{weather.pm25}</b></span>
+          </div>
+          <span className="text-[10px] font-medium uppercase tracking-widest">{weather.condition}</span>
+        </div>
+      </div>
+
+      {/* Greetings & Quick Insight */}
+      <div className="px-1">
+        <h3 className="font-bold text-slate-800 text-lg">สวัสดีค่ะ คุณเบนซ์ ✨</h3>
+        <p className="text-xs text-slate-500">วันนี้วางแผนการใช้จ่ายไปถึงไหนแล้วคะ?</p>
+      </div>
+
+      {/* Monthly Highlight */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-500">
+            <Wallet size={24} />
+          </div>
+          <div>
+            <p className="text-[10px] text-slate-400 font-bold uppercase">ยอดจ่ายรวมเดือนนี้</p>
+            <p className="text-xl font-black text-slate-800">฿{currentMonthTotal.toLocaleString()}</p>
+          </div>
+        </div>
+        <button onClick={() => setActiveTab('summary')} className="p-2 bg-slate-50 rounded-full text-slate-400 hover:text-indigo-500">
+          <ChevronRight size={20} />
+        </button>
+      </div>
+
+      {/* Quick Alerts */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-orange-50 p-4 rounded-3xl border border-orange-100">
+          <TrendingDown size={20} className="text-orange-500 mb-2" />
+          <p className="text-[9px] text-orange-600 font-bold uppercase">บัตรใกล้ตัดรอบ</p>
+          <p className="text-xs font-bold text-slate-700">{cards.length > 0 ? `${cards[0].name}` : 'ยังไม่มีข้อมูล'}</p>
+        </div>
+        <div className="bg-emerald-50 p-4 rounded-3xl border border-emerald-100">
+          <CheckCircle2 size={20} className="text-emerald-500 mb-2" />
+          <p className="text-[9px] text-emerald-600 font-bold uppercase">สถานะการบันทึก</p>
+          <p className="text-xs font-bold text-slate-700 italic">Auto-Cloud On</p>
+        </div>
+      </div>
     </div>
+  );
 
-    <!-- Navigation -->
-    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 flex justify-around items-center z-40 px-2 h-16 max-w-md mx-auto w-full shadow-[0_-8px_20px_-5px_rgba(0,0,0,0.05)] pb-safe-bottom">
-        <button onclick="changeTab('cards')" id="nav-cards" class="flex flex-col items-center justify-center w-full h-full space-y-1 transition-all">
-            <i class="fa-solid fa-credit-card text-lg"></i>
-            <span class="text-[9px] font-bold">จัดการบัตร</span>
-        </button>
-        <button onclick="changeTab('budget')" id="nav-budget" class="flex flex-col items-center justify-center w-full h-full space-y-1 transition-all">
-            <i class="fa-solid fa-chart-pie text-lg"></i>
-            <span class="text-[9px] font-bold">งบประมาณ</span>
-        </button>
-        <button onclick="changeTab('installments')" id="nav-installments" class="flex flex-col items-center justify-center w-full h-full space-y-1 transition-all">
-            <i class="fa-solid fa-list-check text-lg"></i>
-            <span class="text-[9px] font-bold">รายการผ่อน</span>
-        </button>
-        <button onclick="changeTab('summary')" id="nav-summary" class="flex flex-col items-center justify-center w-full h-full space-y-1 transition-all">
-            <i class="fa-solid fa-chart-line text-lg"></i>
-            <span class="text-[9px] font-bold">สรุปรายเดือน</span>
-        </button>
-    </nav>
+  const renderCards = () => (
+    <div className="space-y-4 animate-in fade-in duration-300">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold text-slate-800">บัตรเครดิตของฉัน</h2>
+        <button onClick={() => setShowCardForm(true)} className="bg-indigo-600 text-white p-2 rounded-full shadow-lg"><Plus size={20}/></button>
+      </div>
 
-    <script type="module">
-        // --- DATA ENGINE ---
-        let appState = {
-            cards: [],
-            installments: [],
-            activeTab: 'cards',
-            theme: { color: '#f97316', name: 'Original Orange' },
-            isAdmin: false
-        };
+      {showCardForm && (
+        <form onSubmit={addCard} className="bg-white p-5 rounded-3xl shadow-lg space-y-4 border border-indigo-100">
+          <input required type="text" placeholder="ชื่อบัตร (เช่น KBank)" value={newCard.name} onChange={e => setNewCard({...newCard, name: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
+          <div className="grid grid-cols-2 gap-3">
+            <input required type="number" placeholder="วันตัดรอบ (1-31)" value={newCard.cutOffDate} onChange={e => setNewCard({...newCard, cutOffDate: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
+            <input required type="number" placeholder="วงเงิน" value={newCard.creditLimit} onChange={e => setNewCard({...newCard, creditLimit: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setShowCardForm(false)} className="flex-1 py-3 text-sm font-bold text-slate-400">ยกเลิก</button>
+            <button type="submit" className="flex-2 px-8 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-sm">บันทึกบัตร</button>
+          </div>
+        </form>
+      )}
 
-        const MASTER_STORAGE_KEY = 'MEETANG_SECURE_STORAGE_V6';
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'meetang-pro-app';
-        let db, auth, user, logoTimer;
-        let saveTimeout = null;
+      {cards.length === 0 ? (
+        <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-100">
+          <CreditCard size={48} className="mx-auto text-slate-200 mb-2" />
+          <p className="text-slate-400 text-sm italic">เพิ่มบัตรใบแรกของคุณสิคะ</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {cards.map(c => {
+            const used = installments.filter(i => i.cardId === c.id).reduce((sum, i) => sum + i.monthlyAmount, 0);
+            const pct = Math.min((used / c.creditLimit) * 100, 100);
+            return (
+              <div key={c.id} className="bg-slate-800 p-5 rounded-3xl text-white shadow-md relative overflow-hidden">
+                <div className="flex justify-between items-start relative z-10 mb-6">
+                  <h3 className="font-bold text-lg">{c.name}</h3>
+                  <button onClick={() => delCard(c.id)} className="p-1.5 bg-white/10 rounded-full text-rose-300"><Trash2 size={14}/></button>
+                </div>
+                <div className="relative z-10 space-y-2">
+                  <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    <span>การใช้ประโยชน์วงเงิน</span>
+                    <span>{pct.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-400 transition-all duration-1000" style={{ width: `${pct}%` }}></div>
+                  </div>
+                  <div className="flex justify-between items-end pt-2">
+                    <div><p className="text-[8px] text-white/40 uppercase font-black">วงเงินรวม</p><p className="font-bold">฿{c.creditLimit.toLocaleString()}</p></div>
+                    <div className="text-right"><p className="text-[8px] text-white/40 uppercase font-black">ตัดรอบวันที่</p><p className="text-xl font-black text-orange-400">{c.cutOffDate}</p></div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 
-        // --- FIREBASE START ---
-        async function startApp() {
-            const { fb } = window;
-            const firebaseConfig = JSON.parse(__firebase_config);
-            const app = fb.initializeApp(firebaseConfig);
-            auth = fb.getAuth(app);
-            db = fb.getFirestore(app);
+  const renderInstallments = () => (
+    <div className="space-y-4 animate-in fade-in duration-300">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold text-slate-800">รายการผ่อนทั้งหมด</h2>
+        <button onClick={() => cards.length > 0 ? setShowInstForm(true) : alert('เพิ่มบัตรก่อนนะคะเบนซ์')} className="bg-indigo-600 text-white p-2 rounded-full shadow-lg"><Plus size={20}/></button>
+      </div>
 
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await fb.signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await fb.signInAnonymously(auth);
-                }
+      {showInstForm && (
+        <form onSubmit={addInst} className="bg-white p-5 rounded-3xl shadow-lg space-y-4 border border-indigo-100">
+          <select required value={newInst.cardId} onChange={e => setNewInst({...newInst, cardId: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold appearance-none">
+            <option value="">เลือกบัตรที่ใช้จ่าย</option>
+            {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <input required type="text" placeholder="ชื่อสินค้า/บริการ" value={newInst.name} onChange={e => setNewInst({...newInst, name: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
+          <div className="grid grid-cols-2 gap-3">
+            <input required type="month" value={newInst.startMonth} onChange={e => setNewInst({...newInst, startMonth: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
+            <input required type="number" placeholder="จำนวนงวด" value={newInst.installments} onChange={e => setNewInst({...newInst, installments: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
+          </div>
+          <input required type="number" placeholder="ยอดจ่ายต่อเดือน" value={newInst.monthlyAmount} onChange={e => setNewInst({...newInst, monthlyAmount: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setShowInstForm(false)} className="flex-1 py-3 text-sm font-bold text-slate-400">ยกเลิก</button>
+            <button type="submit" className="flex-2 px-8 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-sm">บันทึกรายการ</button>
+          </div>
+        </form>
+      )}
 
-                fb.onAuthStateChanged(auth, (u) => {
-                    user = u;
-                    if (user) syncData();
-                });
-            } catch (e) {
-                console.error("Connection Error", e);
-                loadOffline();
-            }
-        }
+      <div className="space-y-3">
+        {installments.map(item => {
+          const card = cards.find(c => c.id === item.cardId);
+          return (
+            <div key={item.id} className="bg-white p-4 rounded-3xl border border-slate-50 shadow-sm flex items-center gap-4">
+              <div className="w-10 h-10 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-500 shrink-0">
+                <CalendarDays size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="font-bold text-slate-800 text-sm truncate">{item.name}</h4>
+                <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5"><CreditCard size={10} /> {card?.name || 'ไม่ทราบการ์ด'}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-black text-indigo-600 leading-none">฿{item.monthlyAmount.toLocaleString()}</p>
+                <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">{item.installments} งวด</p>
+              </div>
+              <button onClick={() => setInstallments(installments.filter(i => i.id !== item.id))} className="text-slate-200 hover:text-rose-500 ml-1">
+                <Trash2 size={16} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 
-        async function syncData() {
-            const { fb } = window;
-            const docRef = fb.doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'appState');
+  const renderSummary = () => {
+    // Logic for Summary Table
+    const dataByMonth = [];
+    if (installments.length > 0) {
+      let minMonth = installments[0].startMonth;
+      let maxMonth = '0000-00';
+      installments.forEach(i => {
+        if (i.startMonth < minMonth) minMonth = i.startMonth;
+        const end = addMonths(i.startMonth, i.installments - 1);
+        if (end > maxMonth) maxMonth = end;
+      });
+
+      let current = minMonth;
+      while (current <= maxMonth && dataByMonth.length < 36) {
+        const total = installments.reduce((sum, item) => {
+          const end = addMonths(item.startMonth, item.installments - 1);
+          if (current >= item.startMonth && current <= end) return sum + item.monthlyAmount;
+          return sum;
+        }, 0);
+        dataByMonth.push({ name: formatMonthYear(current), total });
+        current = addMonths(current, 1);
+      }
+    }
+
+    return (
+      <div className="space-y-6 animate-in fade-in duration-300">
+        <h2 className="text-xl font-bold text-slate-800">วิเคราะห์แผนการผ่อน</h2>
+        
+        {dataByMonth.length > 0 ? (
+          <>
+            <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-50 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dataByMonth}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+                  <YAxis hide />
+                  <Tooltip 
+                    cursor={{fill: '#f8fafc'}}
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  />
+                  <Bar dataKey="total" radius={[8, 8, 8, 8]} barSize={20}>
+                    {dataByMonth.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={index === 0 ? '#4f46e5' : '#e2e8f0'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
             
-            const docSnap = await fb.getDoc(docRef);
-            if (docSnap.exists()) {
-                appState = { ...appState, ...docSnap.data() };
-            } else {
-                const local = localStorage.getItem(MASTER_STORAGE_KEY);
-                if (local) appState = JSON.parse(local);
-                else {
-                    appState.cards = [{ id: 'c1', name: 'KBank', limit: 100000, date: 20 }];
-                }
-                await triggerCloudSave();
-            }
-            
-            applyTheme(appState.theme?.color || '#f97316');
-            updateUI();
-        }
+            <div className="bg-white rounded-3xl border border-slate-50 overflow-hidden shadow-sm">
+              <div className="p-4 bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest flex justify-between">
+                <span>ประจำเดือน</span>
+                <span>ยอดจ่ายรวม</span>
+              </div>
+              <div className="divide-y divide-slate-50">
+                {dataByMonth.map((d, idx) => (
+                  <div key={idx} className="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                    <span className="text-sm font-bold text-slate-700">{d.name}</span>
+                    <span className="text-sm font-black text-indigo-600">฿{d.total.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-20 text-slate-300 italic">ไม่มีข้อมูลการวิเคราะห์ค่ะ</div>
+        )}
+      </div>
+    );
+  };
 
-        // Optimized Save: Saves locally immediately, syncs cloud after a short delay
-        async function triggerCloudSave() {
-            // Local Save (Instant)
-            localStorage.setItem(MASTER_STORAGE_KEY, JSON.stringify(appState));
-            
-            // Visual feedback (Show "Saving")
-            showSaveStatus('saving');
+  return (
+    <div className="min-h-screen bg-[#fcfdfe] text-slate-900 font-sans pb-32">
+      {/* Header */}
+      <header className="px-6 pt-8 pb-4 flex justify-between items-center bg-white/80 backdrop-blur-md sticky top-0 z-20">
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+            <LayoutDashboard size={20} />
+          </div>
+          <div>
+            <h1 className="text-lg font-black tracking-tight leading-none text-slate-800">MEETANG</h1>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Smart Personal Tracker</span>
+          </div>
+        </div>
+        <div className="w-10 h-10 rounded-full border border-slate-100 flex items-center justify-center text-slate-300">
+          <AlertCircle size={20} />
+        </div>
+      </header>
 
-            // Debounce cloud sync to handle rapid changes
-            if (saveTimeout) clearTimeout(saveTimeout);
-            
-            saveTimeout = setTimeout(async () => {
-                if (!user) return;
-                const { fb } = window;
-                const docRef = fb.doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'appState');
-                
-                try {
-                    await fb.setDoc(docRef, appState);
-                    showSaveStatus('success');
-                } catch (e) {
-                    console.error("Sync error", e);
-                    showSaveStatus('error');
-                }
-            }, 800); // Wait 0.8s of inactivity before syncing
-        }
+      {/* Content */}
+      <main className="px-6 max-w-md mx-auto w-full mt-4">
+        {activeTab === 'home' && renderHome()}
+        {activeTab === 'cards' && renderCards()}
+        {activeTab === 'installments' && renderInstallments()}
+        {activeTab === 'summary' && renderSummary()}
+      </main>
 
-        function loadOffline() {
-            const local = localStorage.getItem(MASTER_STORAGE_KEY);
-            if (local) appState = JSON.parse(local);
-            applyTheme(appState.theme?.color || '#f97316');
-            updateUI();
-        }
-
-        // --- NEW STATUS UI UTILS ---
-        function showSaveStatus(type) {
-            const banner = document.getElementById('save-banner');
-            const text = document.getElementById('save-text');
-            const iconContainer = document.getElementById('save-icon-container');
-            
-            if (type === 'saving') {
-                banner.classList.add('visible');
-                text.innerText = "กำลังอัปเดตข้อมูลคลาวด์...";
-                text.className = "text-[10px] font-bold text-slate-500 uppercase tracking-wider italic";
-                iconContainer.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin text-[10px] text-orange-500"></i>';
-            } else if (type === 'success') {
-                text.innerText = "บันทึกข้อมูลเรียบร้อยแล้ว";
-                text.className = "text-[10px] font-bold text-emerald-600 uppercase tracking-wider";
-                iconContainer.innerHTML = '<i class="fa-solid fa-circle-check text-[10px] text-emerald-500"></i>';
-                
-                // Hide after 2 seconds
-                setTimeout(() => {
-                    banner.classList.remove('visible');
-                }, 2500);
-            } else if (type === 'error') {
-                text.innerText = "การซิงค์ข้อมูลขัดข้อง (ออฟไลน์)";
-                text.className = "text-[10px] font-bold text-red-500 uppercase tracking-wider";
-                iconContainer.innerHTML = '<i class="fa-solid fa-cloud-slash text-[10px] text-red-400"></i>';
-                setTimeout(() => banner.classList.remove('visible'), 4000);
-            }
-        }
-
-        function applyTheme(color) {
-            document.documentElement.style.setProperty('--primary', color);
-            document.documentElement.style.setProperty('--primary-light', color + "10");
-        }
-
-        function updateUI() {
-            const btnTheme = document.getElementById('theme-btn');
-            if (appState.isAdmin) btnTheme.classList.remove('hidden');
-            else btnTheme.classList.add('hidden');
-            
-            updateNotifBadge();
-            renderViewport();
-        }
-
-        // --- ADMIN ACCESS ---
-        window.startLogoPress = () => {
-            logoTimer = setTimeout(() => {
-                const pass = prompt("ใส่รหัสผ่าน Admin เพื่อเปิดสิทธิ์การตั้งค่า:");
-                if (pass === "MEETANG-ADMIN") {
-                    appState.isAdmin = true;
-                    triggerCloudSave();
-                    alert("เปิดสิทธิ์ Admin สำเร็จ!");
-                    updateUI();
-                } else if(pass !== null) alert("รหัสผ่านไม่ถูกต้อง");
-            }, 2000);
-        };
-        window.endLogoPress = () => clearTimeout(logoTimer);
-
-        window.openThemeMenu = () => {
-            const themes = [
-                { n: 'Original Orange', c: '#f97316' },
-                { n: 'Smart Blue', c: '#0ea5e9' },
-                { n: 'Healthy Green', c: '#10b981' },
-                { n: 'Midnight Violet', c: '#8b5cf6' },
-                { n: 'Elegant Rose', c: '#f43f5e' }
-            ];
-            let html = `<div class="grid grid-cols-1 gap-2.5">
-                ${themes.map(t => `
-                    <button onclick="setAppTheme('${t.c}', '${t.n}')" class="flex items-center justify-between p-4 rounded-2xl border ${appState.theme.color === t.c ? 'border-theme-primary bg-slate-50' : 'border-slate-100'}">
-                        <div class="flex items-center gap-3"><div class="w-5 h-5 rounded-full" style="background:${t.c}"></div><span class="text-sm font-bold text-slate-700">${t.n}</span></div>
-                        ${appState.theme.color === t.c ? `<i class="fa-solid fa-check text-theme-primary"></i>` : ''}
-                    </button>`).join('')}
-            </div>`;
-            renderModal('ปรับแต่งธีมการใช้งาน', html);
-        };
-
-        window.setAppTheme = (c, n) => {
-            appState.theme = { color: c, name: n };
-            applyTheme(c);
-            triggerCloudSave();
-            closeModal();
-            updateUI();
-        };
-
-        // --- NAVIGATION & VIEWS ---
-        window.changeTab = (t) => {
-            appState.activeTab = t;
-            const menu = ['cards', 'budget', 'installments', 'summary'];
-            menu.forEach(m => {
-                const btn = document.getElementById(`nav-${m}`);
-                if (btn) btn.className = `flex flex-col items-center justify-center w-full h-full space-y-1 ${t === m ? 'tab-active' : 'tab-inactive'}`;
-            });
-            renderViewport();
-        };
-
-        const toCurr = (v) => '฿' + Number(v).toLocaleString(undefined, {minimumFractionDigits: 1});
-        const getLongM = (ym) => {
-            const th = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-            const [y, m] = ym.split('-'); return th[parseInt(m)-1] + ' ' + y;
-        };
-        const shiftM = (ym, n) => {
-            const [y, m] = ym.split('-').map(Number);
-            const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        };
-
-        function renderViewport() {
-            const view = document.getElementById('app-viewport');
-            if (!view) return;
-            view.innerHTML = '';
-            const t = appState.activeTab;
-
-            if (t === 'cards') {
-                view.innerHTML = `<h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-credit-card text-theme-primary"></i> จัดการบัตรเครดิต</h2>
-                    <div class="space-y-3">
-                        ${appState.cards.map(c => `<div class="card-navy p-5 rounded-2xl text-white shadow-md relative overflow-hidden">
-                            <div class="flex justify-between items-start mb-6 relative z-10">
-                                <h3 class="text-lg font-bold">${c.name}</h3>
-                                <div class="flex gap-2">
-                                    <button onclick="editCard('${c.id}')" class="w-7 h-7 bg-white/10 rounded-full flex items-center justify-center hover:bg-theme-primary transition-all"><i class="fa-solid fa-pen text-[10px]"></i></button>
-                                    <button onclick="delCard('${c.id}')" class="w-7 h-7 bg-white/10 rounded-full flex items-center justify-center hover:bg-red-500 transition-all"><i class="fa-solid fa-trash text-[10px]"></i></button>
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-2 relative z-10 gap-2">
-                                <div><p class="text-[9px] text-white/30 uppercase tracking-widest leading-none mb-1">Limit</p><p class="text-lg font-bold">${toCurr(c.limit)}</p></div>
-                                <div class="text-right"><p class="text-[9px] text-white/30 uppercase tracking-widest leading-none mb-1">Due Date</p><p class="text-xl font-black text-orange-400">${c.date}</p></div>
-                            </div>
-                        </div>`).join('')}
-                    </div>
-                    <button onclick="openCardForm()" class="fixed bottom-20 right-5 w-12 h-12 bg-theme-primary text-white rounded-full shadow-lg flex items-center justify-center text-xl z-40 active:scale-90 transition-all"><i class="fa-solid fa-plus"></i></button>`;
-            } 
-            else if (t === 'budget') {
-                const totalLim = appState.cards.reduce((s, c) => s + c.limit, 0);
-                const totalUsd = appState.installments.reduce((s, i) => s + i.amount, 0);
-                const totalPct = totalLim > 0 ? Math.min((totalUsd / totalLim) * 100, 100) : 0;
-                view.innerHTML = `<h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-theme-primary"></i> งบประมาณภาพรวม</h2>
-                    <div class="bg-white p-5 rounded-3xl border border-theme-primary/10 shadow-sm mb-5">
-                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center mb-1 leading-none">Total Limit</p>
-                        <h3 class="text-2xl font-black text-slate-800 text-center mb-4">${toCurr(totalLim)}</h3>
-                        <div class="flex justify-between items-end mb-2">
-                            <div class="text-center"><p class="text-[9px] text-slate-400 font-bold uppercase leading-none">Used</p><p class="text-sm font-bold text-red-500 leading-tight">${toCurr(totalUsd)}</p></div>
-                            <div class="h-10 w-[1px] bg-slate-100"></div>
-                            <div class="text-center"><p class="text-[9px] text-slate-400 font-bold uppercase leading-none">Remaining</p><p class="text-sm font-bold text-emerald-500">${toCurr(totalLim - totalUsd)}</p></div>
-                        </div>
-                        <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-theme-primary transition-all duration-1000" style="width: ${totalPct}%"></div></div>
-                    </div>
-                    <div class="space-y-3">
-                        ${appState.cards.map(c => {
-                            const used = appState.installments.filter(i => i.cardId === c.id).reduce((s, i) => s + i.amount, 0);
-                            const pct = Math.min((used / c.limit) * 100, 100);
-                            return `<div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-                                <div class="flex justify-between items-center mb-2"><h3 class="font-bold text-slate-700 text-sm leading-none">${c.name}</h3><span class="text-[9px] font-bold bg-slate-50 px-2 py-0.5 rounded-full leading-none">${pct.toFixed(0)}%</span></div>
-                                <div class="w-full h-1.5 bg-slate-50 rounded-full mb-2"><div class="h-full bg-theme-primary" style="width: ${pct}%"></div></div>
-                                <div class="flex justify-between items-center"><span class="text-[9px] text-slate-400 italic">Avail: ${toCurr(c.limit - used)}</span><button onclick="openBudgetForm('${c.id}')" class="text-[9px] font-bold text-theme-primary underline uppercase leading-none">ปรับงบ</button></div>
-                            </div>`;
-                        }).join('')}
-                    </div>
-                    <button onclick="openBudgetForm()" class="fixed bottom-20 right-5 w-12 h-12 bg-theme-primary text-white rounded-full shadow-lg flex items-center justify-center text-lg z-40 active:scale-90 transition-all"><i class="fa-solid fa-pen-to-square"></i></button>`;
-            }
-            else if (t === 'installments') {
-                view.innerHTML = `<h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-list-check text-theme-primary"></i> รายการผ่อนของคุณ</h2>
-                    <div class="space-y-2.5">
-                        ${appState.installments.length === 0 ? `<div class="py-20 text-center text-slate-300 text-xs">ยังไม่มีรายการผ่อนค่ะ</div>` : 
-                        appState.installments.map(i => {
-                            const card = appState.cards.find(c => c.id === i.cardId);
-                            return `<div class="bg-white p-4 rounded-2xl border border-slate-50 shadow-sm flex justify-between items-center group">
-                                <div class="flex items-center gap-3"><div class="w-9 h-9 bg-slate-50 rounded-xl flex items-center justify-center text-slate-300 shrink-0"><i class="fa-solid fa-tag text-xs"></i></div>
-                                <div><h4 class="font-bold text-slate-800 text-sm leading-tight">${i.name}</h4><p class="text-[9px] text-slate-400 mt-0.5">${card ? card.name : '-'} | เริ่ม ${i.startMonth}</p></div></div>
-                                <div class="text-right"><p class="text-sm font-black text-theme-primary leading-tight">${toCurr(i.amount)}</p><p class="text-[8px] text-slate-400 font-bold leading-none">${i.duration} งวด</p><button onclick="delInst('${i.id}')" class="text-[9px] text-red-300 font-bold mt-1 uppercase leading-none">ลบ</button></div>
-                            </div>`;
-                        }).join('')}
-                    </div>
-                    <button onclick="openInstForm()" class="fixed bottom-20 right-5 w-12 h-12 bg-theme-primary text-white rounded-full shadow-lg flex items-center justify-center text-xl z-40 active:scale-90 transition-all"><i class="fa-solid fa-plus"></i></button>`;
-            }
-            else if (t === 'summary') renderSummary(view);
-        }
-
-        function renderSummary(container) {
-            if (appState.installments.length === 0) {
-                container.innerHTML = `<div class="py-20 text-center text-slate-300 text-xs">เพิ่มรายการผ่อนเพื่อดูสรุปออโต้จ้า</div>`; return;
-            }
-            let first = appState.installments[0].startMonth;
-            let last = '0000-00';
-            appState.installments.forEach(i => {
-                if (i.startMonth < first) first = i.startMonth;
-                const end = shiftM(i.startMonth, i.duration - 1); if (end > last) last = end;
-            });
-            const stats = []; let curr = first;
-            while (curr <= last && stats.length < 36) {
-                let sum = 0; appState.installments.forEach(i => {
-                    const iEnd = shiftM(i.startMonth, i.duration - 1); if (curr >= i.startMonth && curr <= iEnd) sum += i.amount;
-                });
-                stats.push({ ym: curr, total: sum }); curr = shiftM(curr, 1);
-            }
-            container.innerHTML = `<h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-chart-line text-theme-primary"></i> สรุปยอดจ่ายรายเดือน</h2>
-                <div class="bg-white p-4 rounded-3xl shadow-sm border border-slate-50 mb-5"><div class="h-48 w-full"><canvas id="sumCanvas"></canvas></div></div>
-                <div class="bg-white rounded-3xl shadow-sm border border-slate-50 overflow-hidden divide-y divide-slate-50">
-                    <div class="p-3.5 bg-slate-50/50 flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-widest"><span>ประจำเดือน</span><span>ยอดรวมจ่าย</span></div>
-                    ${stats.map(s => `<div class="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors">
-                        <div><p class="text-sm font-bold text-slate-800 leading-tight">${getLongM(s.ym)}</p><p class="text-[8px] text-slate-400 uppercase tracking-widest mt-0.5 leading-none">Auto-Summary</p></div>
-                        <p class="text-sm font-black text-theme-primary leading-tight">${toCurr(s.total)}</p>
-                    </div>`).join('')}
-                </div>`;
-            requestAnimationFrame(() => {
-                const ctx = document.getElementById('sumCanvas').getContext('2d');
-                if (chartInstance) chartInstance.destroy();
-                chartInstance = new Chart(ctx, {
-                    type: 'line', data: { labels: stats.map(s => s.ym.split('-')[1]+'/'+s.ym.split('-')[0].substring(2)),
-                        datasets: [{ data: stats.map(s => s.total), borderColor: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
-                            borderWidth: 3, backgroundColor: 'rgba(0,0,0,0.01)', fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#fff' }] },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
-                        scales: { y: { beginAtZero: true, grid: { color: '#f8fafc' }, ticks: { font: {size: 8}, callback: v => '฿' + v.toLocaleString() } },
-                                  x: { grid: { display: false }, ticks: { font: {size: 8} } } } }
-                });
-            });
-        }
-
-        // --- ACTION HANDLERS ---
-        window.renderModal = (t, h) => { document.getElementById('modal-inner').innerHTML = `<h3 class="text-lg font-bold mb-4 text-slate-800">${t}</h3>${h}`; document.getElementById('modal-screen').classList.remove('hidden'); };
-        window.closeModal = () => document.getElementById('modal-screen').classList.add('hidden');
-
-        window.openCardForm = () => {
-            renderModal('เพิ่มบัตรใหม่', `<div class="space-y-3">
-                <input id="in-n" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="ชื่อบัตร">
-                <input id="in-l" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="วงเงินรวม">
-                <input id="in-d" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="วันตัดยอด (1-31)">
-                <button onclick="commitCard()" class="w-full py-3 bg-theme-primary text-white rounded-xl font-bold shadow-md mt-2 text-sm uppercase">บันทึกข้อมูล</button></div>`);
-        };
-        window.commitCard = () => {
-            const n = document.getElementById('in-n').value, l = document.getElementById('in-l').value, d = document.getElementById('in-d').value;
-            if(!n || !l || !d) return alert('กรอกข้อมูลให้ครบนะคะ');
-            appState.cards.push({ id: Date.now().toString(), name: n, limit: Number(l), date: Number(d) });
-            triggerCloudSave(); closeModal(); updateUI();
-        };
-
-        window.editCard = (id) => {
-            const c = appState.cards.find(x => x.id === id);
-            renderModal('แก้ไขบัตร', `<div class="space-y-3">
-                <input id="in-n" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" value="${c.name}">
-                <input id="in-l" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" value="${c.limit}">
-                <input id="in-d" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" value="${c.date}">
-                <button onclick="updateCard('${id}')" class="w-full py-3 bg-theme-primary text-white rounded-xl font-bold shadow-md mt-2 text-sm uppercase">อัปเดตข้อมูล</button></div>`);
-        };
-        window.updateCard = (id) => {
-            const n = document.getElementById('in-n').value, l = document.getElementById('in-l').value, d = document.getElementById('in-d').value;
-            const idx = appState.cards.findIndex(x => x.id === id);
-            if(idx !== -1) { appState.cards[idx] = { ...appState.cards[idx], name: n, limit: Number(l), date: Number(d) }; triggerCloudSave(); closeModal(); updateUI(); }
-        };
-
-        window.openBudgetForm = (sid) => {
-            if(!sid) {
-                renderModal('แก้งบประมาณ', `<div class="space-y-3">
-                    <select id="s-id" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm">${appState.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select>
-                    <input id="in-bl" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="วงเงินใหม่">
-                    <button onclick="updBud(document.getElementById('s-id').value)" class="w-full py-3 bg-theme-primary text-white rounded-xl font-bold shadow-md mt-2 text-sm uppercase">ยืนยัน</button></div>`);
-                return;
-            }
-            const c = appState.cards.find(x => x.id === sid);
-            renderModal('ปรับวงเงิน', `<div class="space-y-3">
-                <input id="in-bl" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" value="${c.limit}">
-                <button onclick="updBud('${sid}')" class="w-full py-3 bg-theme-primary text-white rounded-xl font-bold shadow-md mt-2 text-sm uppercase">ยืนยัน</button></div>`);
-        };
-        window.updBud = (id) => {
-            const l = document.getElementById('in-bl').value; const idx = appState.cards.findIndex(x => x.id === id);
-            if(idx !== -1) { appState.cards[idx].limit = Number(l); triggerCloudSave(); closeModal(); updateUI(); }
-        };
-
-        window.openInstForm = () => {
-            if(appState.cards.length === 0) return alert('เพิ่มบัตรก่อนค่ะ');
-            renderModal('เพิ่มรายการผ่อน', `<div class="space-y-3">
-                <select id="in-cid" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm">${appState.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select>
-                <input id="in-item" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="ชื่อสินค้า">
-                <div class="flex gap-3"><input id="in-s" type="month" class="flex-1 p-3 bg-slate-50 rounded-xl outline-none text-sm"><input id="in-dr" type="number" class="w-20 p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="งวด"></div>
-                <input id="in-a" type="number" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm" placeholder="ยอดต่อเดือน">
-                <button onclick="commitInst()" class="w-full py-3 bg-theme-primary text-white rounded-xl font-bold shadow-md mt-2 text-sm uppercase">บันทึก</button></div>`);
-        };
-        window.commitInst = () => {
-            const cid = document.getElementById('in-cid').value, n = document.getElementById('in-item').value, s = document.getElementById('in-s').value, d = document.getElementById('in-dr').value, a = document.getElementById('in-a').value;
-            if(!n || !s || !d || !a) return alert('ข้อมูลไม่ครบนะคะ');
-            appState.installments.push({ id: Date.now().toString(), cardId: cid, name: n, startMonth: s, duration: Number(d), amount: Number(a) });
-            triggerCloudSave(); closeModal(); updateUI();
-        };
-
-        window.delCard = (id) => { if(confirm("ลบบัตรนี้รายการผ่อนจะหายไปด้วย ยืนยันไหม?")) { appState.cards = appState.cards.filter(x => x.id !== id); appState.installments = appState.installments.filter(x => x.cardId !== id); triggerCloudSave(); updateUI(); } };
-        window.delInst = (id) => { if(confirm("ลบรายการนี้ไหมคะ?")) { appState.installments = appState.installments.filter(x => x.id !== id); triggerCloudSave(); updateUI(); } };
-
-        window.openNotifications = () => {
-            const today = new Date().getDate();
-            const list = appState.cards.map(c => {
-                const diff = c.date - today;
-                if (diff >= 0 && diff <= 3) return { t: 'ใกล้ตัดรอบ', x: `บัตร ${c.name} ตัดรอบใน ${diff === 0 ? 'วันนี้' : diff + ' วัน'}`, i: 'fa-clock' };
-                return null;
-            }).filter(x => x !== null);
-            let html = `<div class="space-y-3">${list.length === 0 ? '<p class="text-center text-slate-400 py-6 text-sm">ไม่มีแจ้งเตือนใหม่ค่ะ</p>' : list.map(n => `<div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex gap-3 items-center"><div class="w-9 h-9 rounded-full bg-white flex items-center justify-center text-orange-500 shadow-sm shrink-0"><i class="fa-solid ${n.i} text-sm"></i></div><div><p class="text-xs font-bold text-slate-800">${n.t}</p><p class="text-[10px] text-slate-500 mt-0.5">${n.x}</p></div></div>`).join('')}</div>`;
-            renderModal('การแจ้งเตือน', html);
-        };
-
-        function updateNotifBadge() {
-            const count = appState.cards.filter(c => { const diff = c.date - new Date().getDate(); return diff >= 0 && diff <= 3; }).length;
-            const b = document.getElementById('notif-badge');
-            if (b) { if (count > 0) { b.innerText = count; b.classList.remove('hidden'); } else b.classList.add('hidden'); }
-        }
-
-        window.onload = startApp;
-    </script>
-</body>
-</html>
+      {/* Navigation */}
+      <nav className="fixed bottom-6 left-6 right-6 h-20 bg-white border border-slate-100 rounded-[2.5rem] shadow-2xl shadow-indigo-100 flex justify-around items-center px-4 z-40">
+        {[
+          { id: 'home', icon: LayoutDashboard, label: 'หน้าหลัก' },
+          { id: 'cards', icon: CreditCard, label: 'จัดการบัตร' },
+          { id: 'installments', icon: CalendarDays, label: 'ผ่อน' },
+          { id: 'summary', icon: PieChart, label: 'วิเคราะห์' }
+        ].map(item => (
+          <button 
+            key={item.id}
+            onClick={() => setActiveTab(item.id)}
+            className={`flex flex-col items-center justify-center space-y-1.5 transition-all duration-300 ${activeTab === item.id ? 'text-indigo-600 scale-110' : 'text-slate-300 hover:text-slate-400'}`}
+          >
+            <item.icon size={activeTab === item.id ? 24 : 20} strokeWidth={activeTab === item.id ? 2.5 : 2} />
+            <span className={`text-[8px] font-bold uppercase tracking-tighter transition-opacity ${activeTab === item.id ? 'opacity-100' : 'opacity-0'}`}>{item.label}</span>
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
