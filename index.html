@@ -1,421 +1,767 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell
-} from 'recharts';
-import { 
-  CreditCard, CalendarDays, PieChart, Plus, Trash2, 
-  CheckCircle2, Circle, LayoutDashboard, Wallet, ChevronRight,
-  Sun, CloudRain, Wind, Thermometer, MapPin, AlertCircle, TrendingDown
-} from 'lucide-react';
-
-// --- Helper Functions ---
-const addMonths = (yyyyMM, monthsToAdd) => {
-  const [year, month] = yyyMM.split('-').map(Number);
-  const date = new Date(year, month - 1 + monthsToAdd, 1);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-};
-
-const formatMonthYear = (yyyyMM) => {
-  if (!yyyyMM) return '';
-  const [year, month] = yyyMM.split('-');
-  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-  return `${months[parseInt(month, 10) - 1]} ${year.substring(2)}`;
-};
-
-// --- Main Application ---
-export default function App() {
-  const [activeTab, setActiveTab] = useState('home');
-  
-  // Data State
-  const [cards, setCards] = useState([]);
-  const [installments, setInstallments] = useState([]);
-  const [weather, setWeather] = useState({ temp: '--', condition: 'กำลังโหลด...', pm25: '--', location: 'ตรวจหาพิกัด...' });
-
-  // Forms Visibility
-  const [showCardForm, setShowCardForm] = useState(false);
-  const [showInstForm, setShowInstForm] = useState(false);
-
-  // New Data Models
-  const [newCard, setNewCard] = useState({ name: '', cutOffDate: '', creditLimit: '' });
-  const [newInst, setNewInst] = useState({ cardId: '', name: '', startMonth: '', installments: '', monthlyAmount: '' });
-
-  // 1. Initial Load & Persistence
-  useEffect(() => {
-    const savedCards = localStorage.getItem('MT_CARDS');
-    const savedInsts = localStorage.getItem('MT_INSTS');
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Meetang - Smart Tracker</title>
     
-    if (savedCards) setCards(JSON.parse(savedCards));
-    if (savedInsts) setInstallments(JSON.parse(savedInsts));
+    <!-- Dependencies (Tailwind, Chart.js, FontAwesome) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase Standard Modules -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        window.fb = { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, getFirestore, doc, setDoc, getDoc, onSnapshot };
+    </script>
 
-    // Fetch Weather & AQI based on location
-    fetchRealtimeEnvironment();
-  }, []);
-
-  // 2. Auto Save Logic
-  useEffect(() => {
-    localStorage.setItem('MT_CARDS', JSON.stringify(cards));
-    localStorage.setItem('MT_INSTS', JSON.stringify(installments));
-  }, [cards, installments]);
-
-  const fetchRealtimeEnvironment = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        try {
-          // ใช้ Open-Meteo (Free API - No Key Required for basic use)
-          const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&air_quality=pm2_5`);
-          const data = await res.json();
-          const pmRes = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&current=pm2_5`);
-          const pmData = await pmRes.json();
-
-          setWeather({
-            temp: data.current.temperature_2m.toFixed(1),
-            condition: getWeatherDesc(data.current.weather_code),
-            pm25: pmData.current.pm2_5.toFixed(1),
-            location: 'พิกัดปัจจุบัน'
-          });
-        } catch (e) {
-          console.error('Weather fetch failed', e);
-        }
-      });
-    }
-  };
-
-  const getWeatherDesc = (code) => {
-    if (code === 0) return 'ท้องฟ้าแจ่มใส';
-    if (code <= 3) return 'เมฆบางส่วน';
-    if (code >= 45 && code <= 48) return 'หมอกลง';
-    if (code >= 51) return 'ฝนตก';
-    return 'อากาศแปรปรวน';
-  };
-
-  const getPMColor = (val) => {
-    if (val <= 15) return 'text-emerald-500';
-    if (val <= 37) return 'text-yellow-500';
-    return 'text-rose-500';
-  };
-
-  // --- Handlers ---
-  const addCard = (e) => {
-    e.preventDefault();
-    const card = { ...newCard, id: Date.now().toString(), creditLimit: Number(newCard.creditLimit) };
-    setCards([...cards, card]);
-    setNewCard({ name: '', cutOffDate: '', creditLimit: '' });
-    setShowCardForm(false);
-  };
-
-  const addInst = (e) => {
-    e.preventDefault();
-    const inst = { ...newInst, id: Date.now().toString(), installments: Number(newInst.installments), monthlyAmount: Number(newInst.monthlyAmount) };
-    setInstallments([...installments, inst]);
-    setNewInst({ cardId: '', name: '', startMonth: '', installments: '', monthlyAmount: '' });
-    setShowInstForm(false);
-  };
-
-  const delCard = (id) => {
-    if(window.confirm('ลบบัตรนี้รายการผ่อนจะหายหมดเลยนะคะ ยืนยันไหม?')) {
-      setCards(cards.filter(c => c.id !== id));
-      setInstallments(installments.filter(i => i.cardId !== id));
-    }
-  };
-
-  // --- Analytics ---
-  const currentMonthTotal = useMemo(() => {
-    const today = new Date();
-    const thisYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    return installments.reduce((sum, item) => {
-      const start = item.startMonth;
-      const end = addMonths(item.startMonth, item.installments - 1);
-      if (thisYm >= start && thisYm <= end) return sum + item.monthlyAmount;
-      return sum;
-    }, 0);
-  }, [installments]);
-
-  // --- Render Functions ---
-
-  const renderHome = () => (
-    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* Weather Widget */}
-      <div className="bg-gradient-to-br from-indigo-600 to-blue-500 p-6 rounded-3xl text-white shadow-xl">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <p className="text-xs opacity-80 flex items-center gap-1"><MapPin size={10} /> {weather.location}</p>
-            <h2 className="text-4xl font-bold mt-1">{weather.temp}°C</h2>
-          </div>
-          <Sun className="w-12 h-12 text-yellow-300" />
-        </div>
-        <div className="flex justify-between items-center bg-white/10 p-3 rounded-2xl backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <Wind size={16} className="text-blue-200" />
-            <span className="text-xs">PM 2.5: <b className={getPMColor(weather.pm25)}>{weather.pm25}</b></span>
-          </div>
-          <span className="text-[10px] font-medium uppercase tracking-widest">{weather.condition}</span>
-        </div>
-      </div>
-
-      {/* Greetings & Quick Insight */}
-      <div className="px-1">
-        <h3 className="font-bold text-slate-800 text-lg">สวัสดีค่ะ คุณเบนซ์ ✨</h3>
-        <p className="text-xs text-slate-500">วันนี้วางแผนการใช้จ่ายไปถึงไหนแล้วคะ?</p>
-      </div>
-
-      {/* Monthly Highlight */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-500">
-            <Wallet size={24} />
-          </div>
-          <div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase">ยอดจ่ายรวมเดือนนี้</p>
-            <p className="text-xl font-black text-slate-800">฿{currentMonthTotal.toLocaleString()}</p>
-          </div>
-        </div>
-        <button onClick={() => setActiveTab('summary')} className="p-2 bg-slate-50 rounded-full text-slate-400 hover:text-indigo-500">
-          <ChevronRight size={20} />
-        </button>
-      </div>
-
-      {/* Quick Alerts */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-orange-50 p-4 rounded-3xl border border-orange-100">
-          <TrendingDown size={20} className="text-orange-500 mb-2" />
-          <p className="text-[9px] text-orange-600 font-bold uppercase">บัตรใกล้ตัดรอบ</p>
-          <p className="text-xs font-bold text-slate-700">{cards.length > 0 ? `${cards[0].name}` : 'ยังไม่มีข้อมูล'}</p>
-        </div>
-        <div className="bg-emerald-50 p-4 rounded-3xl border border-emerald-100">
-          <CheckCircle2 size={20} className="text-emerald-500 mb-2" />
-          <p className="text-[9px] text-emerald-600 font-bold uppercase">สถานะการบันทึก</p>
-          <p className="text-xs font-bold text-slate-700 italic">Auto-Cloud On</p>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderCards = () => (
-    <div className="space-y-4 animate-in fade-in duration-300">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold text-slate-800">บัตรเครดิตของฉัน</h2>
-        <button onClick={() => setShowCardForm(true)} className="bg-indigo-600 text-white p-2 rounded-full shadow-lg"><Plus size={20}/></button>
-      </div>
-
-      {showCardForm && (
-        <form onSubmit={addCard} className="bg-white p-5 rounded-3xl shadow-lg space-y-4 border border-indigo-100">
-          <input required type="text" placeholder="ชื่อบัตร (เช่น KBank)" value={newCard.name} onChange={e => setNewCard({...newCard, name: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
-          <div className="grid grid-cols-2 gap-3">
-            <input required type="number" placeholder="วันตัดรอบ (1-31)" value={newCard.cutOffDate} onChange={e => setNewCard({...newCard, cutOffDate: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
-            <input required type="number" placeholder="วงเงิน" value={newCard.creditLimit} onChange={e => setNewCard({...newCard, creditLimit: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
-          </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setShowCardForm(false)} className="flex-1 py-3 text-sm font-bold text-slate-400">ยกเลิก</button>
-            <button type="submit" className="flex-2 px-8 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-sm">บันทึกบัตร</button>
-          </div>
-        </form>
-      )}
-
-      {cards.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-100">
-          <CreditCard size={48} className="mx-auto text-slate-200 mb-2" />
-          <p className="text-slate-400 text-sm italic">เพิ่มบัตรใบแรกของคุณสิคะ</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {cards.map(c => {
-            const used = installments.filter(i => i.cardId === c.id).reduce((sum, i) => sum + i.monthlyAmount, 0);
-            const pct = Math.min((used / c.creditLimit) * 100, 100);
-            return (
-              <div key={c.id} className="bg-slate-800 p-5 rounded-3xl text-white shadow-md relative overflow-hidden">
-                <div className="flex justify-between items-start relative z-10 mb-6">
-                  <h3 className="font-bold text-lg">{c.name}</h3>
-                  <button onClick={() => delCard(c.id)} className="p-1.5 bg-white/10 rounded-full text-rose-300"><Trash2 size={14}/></button>
-                </div>
-                <div className="relative z-10 space-y-2">
-                  <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                    <span>การใช้ประโยชน์วงเงิน</span>
-                    <span>{pct.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-400 transition-all duration-1000" style={{ width: `${pct}%` }}></div>
-                  </div>
-                  <div className="flex justify-between items-end pt-2">
-                    <div><p className="text-[8px] text-white/40 uppercase font-black">วงเงินรวม</p><p className="font-bold">฿{c.creditLimit.toLocaleString()}</p></div>
-                    <div className="text-right"><p className="text-[8px] text-white/40 uppercase font-black">ตัดรอบวันที่</p><p className="text-xl font-black text-orange-400">{c.cutOffDate}</p></div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-
-  const renderInstallments = () => (
-    <div className="space-y-4 animate-in fade-in duration-300">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold text-slate-800">รายการผ่อนทั้งหมด</h2>
-        <button onClick={() => cards.length > 0 ? setShowInstForm(true) : alert('เพิ่มบัตรก่อนนะคะเบนซ์')} className="bg-indigo-600 text-white p-2 rounded-full shadow-lg"><Plus size={20}/></button>
-      </div>
-
-      {showInstForm && (
-        <form onSubmit={addInst} className="bg-white p-5 rounded-3xl shadow-lg space-y-4 border border-indigo-100">
-          <select required value={newInst.cardId} onChange={e => setNewInst({...newInst, cardId: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold appearance-none">
-            <option value="">เลือกบัตรที่ใช้จ่าย</option>
-            {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <input required type="text" placeholder="ชื่อสินค้า/บริการ" value={newInst.name} onChange={e => setNewInst({...newInst, name: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
-          <div className="grid grid-cols-2 gap-3">
-            <input required type="month" value={newInst.startMonth} onChange={e => setNewInst({...newInst, startMonth: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
-            <input required type="number" placeholder="จำนวนงวด" value={newInst.installments} onChange={e => setNewInst({...newInst, installments: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
-          </div>
-          <input required type="number" placeholder="ยอดจ่ายต่อเดือน" value={newInst.monthlyAmount} onChange={e => setNewInst({...newInst, monthlyAmount: e.target.value})} className="w-full p-3 bg-slate-50 rounded-2xl outline-none text-sm font-bold" />
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setShowInstForm(false)} className="flex-1 py-3 text-sm font-bold text-slate-400">ยกเลิก</button>
-            <button type="submit" className="flex-2 px-8 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-sm">บันทึกรายการ</button>
-          </div>
-        </form>
-      )}
-
-      <div className="space-y-3">
-        {installments.map(item => {
-          const card = cards.find(c => c.id === item.cardId);
-          return (
-            <div key={item.id} className="bg-white p-4 rounded-3xl border border-slate-50 shadow-sm flex items-center gap-4">
-              <div className="w-10 h-10 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-500 shrink-0">
-                <CalendarDays size={20} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="font-bold text-slate-800 text-sm truncate">{item.name}</h4>
-                <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5"><CreditCard size={10} /> {card?.name || 'ไม่ทราบการ์ด'}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-black text-indigo-600 leading-none">฿{item.monthlyAmount.toLocaleString()}</p>
-                <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">{item.installments} งวด</p>
-              </div>
-              <button onClick={() => setInstallments(installments.filter(i => i.id !== item.id))} className="text-slate-200 hover:text-rose-500 ml-1">
-                <Trash2 size={16} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-
-  const renderSummary = () => {
-    // Logic for Summary Table
-    const dataByMonth = [];
-    if (installments.length > 0) {
-      let minMonth = installments[0].startMonth;
-      let maxMonth = '0000-00';
-      installments.forEach(i => {
-        if (i.startMonth < minMonth) minMonth = i.startMonth;
-        const end = addMonths(i.startMonth, i.installments - 1);
-        if (end > maxMonth) maxMonth = end;
-      });
-
-      let current = minMonth;
-      while (current <= maxMonth && dataByMonth.length < 36) {
-        const total = installments.reduce((sum, item) => {
-          const end = addMonths(item.startMonth, item.installments - 1);
-          if (current >= item.startMonth && current <= end) return sum + item.monthlyAmount;
-          return sum;
-        }, 0);
-        dataByMonth.push({ name: formatMonthYear(current), total });
-        current = addMonths(current, 1);
-      }
-    }
-
-    return (
-      <div className="space-y-6 animate-in fade-in duration-300">
-        <h2 className="text-xl font-bold text-slate-800">วิเคราะห์แผนการผ่อน</h2>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700;800;900&display=swap');
         
-        {dataByMonth.length > 0 ? (
-          <>
-            <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-50 h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dataByMonth}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
-                  <YAxis hide />
-                  <Tooltip 
-                    cursor={{fill: '#f8fafc'}}
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Bar dataKey="total" radius={[8, 8, 8, 8]} barSize={20}>
-                    {dataByMonth.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={index === 0 ? '#4f46e5' : '#e2e8f0'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+        :root {
+            --primary: #f97316;
+            --primary-light: #fff7ed;
+        }
+        
+        body { 
+            font-family: 'Kanit', sans-serif; 
+            -webkit-tap-highlight-color: transparent; 
+            background-color: #f8fafc;
+            color: #0f172a;
+        }
+        
+        .text-theme-primary { color: var(--primary); }
+        .bg-theme-primary { background-color: var(--primary); }
+        .border-theme-primary { border-color: var(--primary); }
+        
+        .tab-active { color: var(--primary); transform: scale(1.05); transition: all 0.3s; } 
+        .tab-inactive { color: #94a3b8; }
+        
+        .card-gradient { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); }
+        .weather-gradient { background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); }
+        
+        .safe-pb { padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 100px); }
+        
+        /* Modals & Animations */
+        .bottom-sheet { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .logo-btn:active { transform: scale(0.9); }
+        
+        /* Save Status Banner */
+        #save-banner { transition: all 0.3s ease; max-height: 0; opacity: 0; overflow: hidden; }
+        #save-banner.visible { max-height: 40px; opacity: 1; margin-top: 8px; padding: 4px 16px; }
+    </style>
+</head>
+<body class="min-h-screen relative">
+
+    <!-- Header Section -->
+    <header class="bg-white/90 backdrop-blur-md px-6 py-4 sticky top-0 z-40 flex flex-col shadow-sm border-b border-slate-100">
+        <div class="flex justify-between items-center w-full">
+            <div class="flex items-center gap-3">
+                <button onmousedown="startAdminTimer()" onmouseup="clearAdminTimer()" ontouchstart="startAdminTimer()" ontouchend="clearAdminTimer()" class="logo-btn transition-transform outline-none">
+                    <div class="w-10 h-10 bg-theme-primary rounded-2xl flex items-center justify-center text-white shadow-lg shadow-orange-200">
+                        <i class="fa-solid fa-cat text-xl"></i>
+                    </div>
+                </button>
+                <div class="flex flex-col">
+                    <h1 class="text-lg font-black text-slate-800 leading-none tracking-tight">MEETANG</h1>
+                    <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Smart Tracker 🔒</p>
+                </div>
             </div>
             
-            <div className="bg-white rounded-3xl border border-slate-50 overflow-hidden shadow-sm">
-              <div className="p-4 bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest flex justify-between">
-                <span>ประจำเดือน</span>
-                <span>ยอดจ่ายรวม</span>
-              </div>
-              <div className="divide-y divide-slate-50">
-                {dataByMonth.map((d, idx) => (
-                  <div key={idx} className="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors">
-                    <span className="text-sm font-bold text-slate-700">{d.name}</span>
-                    <span className="text-sm font-black text-indigo-600">฿{d.total.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
+            <div class="flex items-center gap-2">
+                <button id="theme-btn" onclick="showThemeMenu()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary transition-colors hidden">
+                    <i class="fa-solid fa-palette text-sm"></i>
+                </button>
+                <button onclick="showNotifs()" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 relative hover:text-theme-primary transition-all">
+                    <i class="fa-solid fa-bell text-sm"></i>
+                    <div id="notif-dot" class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full hidden border-2 border-white"></div>
+                </button>
             </div>
-          </>
-        ) : (
-          <div className="text-center py-20 text-slate-300 italic">ไม่มีข้อมูลการวิเคราะห์ค่ะ</div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="min-h-screen bg-[#fcfdfe] text-slate-900 font-sans pb-32">
-      {/* Header */}
-      <header className="px-6 pt-8 pb-4 flex justify-between items-center bg-white/80 backdrop-blur-md sticky top-0 z-20">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
-            <LayoutDashboard size={20} />
-          </div>
-          <div>
-            <h1 className="text-lg font-black tracking-tight leading-none text-slate-800">MEETANG</h1>
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Smart Personal Tracker</span>
-          </div>
         </div>
-        <div className="w-10 h-10 rounded-full border border-slate-100 flex items-center justify-center text-slate-300">
-          <AlertCircle size={20} />
+        
+        <!-- Status Banner -->
+        <div id="save-banner" class="flex items-center justify-center gap-2 bg-slate-50 rounded-full mx-auto border border-slate-100">
+            <span id="save-icon-box"></span>
+            <span id="save-msg" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest"></span>
         </div>
-      </header>
+    </header>
 
-      {/* Content */}
-      <main className="px-6 max-w-md mx-auto w-full mt-4">
-        {activeTab === 'home' && renderHome()}
-        {activeTab === 'cards' && renderCards()}
-        {activeTab === 'installments' && renderInstallments()}
-        {activeTab === 'summary' && renderSummary()}
-      </main>
+    <!-- Main Content Area -->
+    <main class="p-5 max-w-md mx-auto w-full safe-pb" id="view-container">
+        <div class="flex flex-col items-center justify-center py-40">
+            <i class="fa-solid fa-circle-notch fa-spin text-4xl mb-4 text-theme-primary"></i>
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest animate-pulse">กำลังโหลดข้อมูล...</p>
+        </div>
+    </main>
 
-      {/* Navigation */}
-      <nav className="fixed bottom-6 left-6 right-6 h-20 bg-white border border-slate-100 rounded-[2.5rem] shadow-2xl shadow-indigo-100 flex justify-around items-center px-4 z-40">
-        {[
-          { id: 'home', icon: LayoutDashboard, label: 'หน้าหลัก' },
-          { id: 'cards', icon: CreditCard, label: 'จัดการบัตร' },
-          { id: 'installments', icon: CalendarDays, label: 'ผ่อน' },
-          { id: 'summary', icon: PieChart, label: 'วิเคราะห์' }
-        ].map(item => (
-          <button 
-            key={item.id}
-            onClick={() => setActiveTab(item.id)}
-            className={`flex flex-col items-center justify-center space-y-1.5 transition-all duration-300 ${activeTab === item.id ? 'text-indigo-600 scale-110' : 'text-slate-300 hover:text-slate-400'}`}
-          >
-            <item.icon size={activeTab === item.id ? 24 : 20} strokeWidth={activeTab === item.id ? 2.5 : 2} />
-            <span className={`text-[8px] font-bold uppercase tracking-tighter transition-opacity ${activeTab === item.id ? 'opacity-100' : 'opacity-0'}`}>{item.label}</span>
-          </button>
-        ))}
-      </nav>
+    <!-- Modal Overlay -->
+    <div id="modal-overlay" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex flex-col justify-end backdrop-blur-sm">
+        <div class="bg-white w-full max-w-md mx-auto rounded-t-[2.5rem] p-6 bottom-sheet shadow-2xl relative max-h-[85vh] overflow-y-auto">
+            <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6" onclick="closeModal()"></div>
+            <div id="modal-content"></div>
+        </div>
     </div>
-  );
-}
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="fixed bottom-5 left-5 right-5 h-[72px] bg-white border border-slate-100 rounded-3xl shadow-xl shadow-slate-200/50 flex justify-around items-center px-2 z-40 max-w-md mx-auto">
+        <button onclick="switchTab('home')" id="tab-home" class="flex flex-col items-center justify-center w-full h-full space-y-1.5 text-slate-400">
+            <i class="fa-solid fa-house text-xl"></i>
+            <span class="text-[8px] font-bold uppercase tracking-wider">หน้าหลัก</span>
+        </button>
+        <button onclick="switchTab('cards')" id="tab-cards" class="flex flex-col items-center justify-center w-full h-full space-y-1.5 text-slate-400">
+            <i class="fa-solid fa-credit-card text-xl"></i>
+            <span class="text-[8px] font-bold uppercase tracking-wider">บัตร</span>
+        </button>
+        <button onclick="switchTab('installments')" id="tab-installments" class="flex flex-col items-center justify-center w-full h-full space-y-1.5 text-slate-400">
+            <i class="fa-solid fa-calendar-check text-xl"></i>
+            <span class="text-[8px] font-bold uppercase tracking-wider">ผ่อน</span>
+        </button>
+        <button onclick="switchTab('summary')" id="tab-summary" class="flex flex-col items-center justify-center w-full h-full space-y-1.5 text-slate-400">
+            <i class="fa-solid fa-chart-pie text-xl"></i>
+            <span class="text-[8px] font-bold uppercase tracking-wider">วิเคราะห์</span>
+        </button>
+    </nav>
+
+    <script type="module">
+        // --- GLOBAL STATE ---
+        let state = {
+            cards: [],
+            installments: [],
+            tab: 'home',
+            theme: { color: '#f97316' },
+            admin: false,
+            weather: { temp: '--', condition: 'กำลังโหลด...', pm25: '--', location: 'พิกัดปัจจุบัน' }
+        };
+
+        const DB_KEY = 'MEETANG_V8_FINAL';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'meetang-v8-app';
+        let db, auth, user, timer, chartInstance, saveTimeout;
+
+        // --- INITIALIZATION ---
+        async function run() {
+            // Load Local Fast
+            const local = localStorage.getItem(DB_KEY);
+            if(local) {
+                try {
+                    const parsed = JSON.parse(local);
+                    state = { ...state, ...parsed };
+                    applyTheme(state.theme?.color || '#f97316');
+                } catch(e) {}
+            }
+            
+            // Get Realtime Weather
+            fetchWeather();
+            
+            // Render UI immediately
+            renderViewport();
+
+            // Firebase Cloud Setup
+            const { fb } = window;
+            const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+            if(!config) return; // Fallback for local testing
+
+            const app = fb.initializeApp(config);
+            auth = fb.getAuth(app);
+            db = fb.getFirestore(app);
+
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await fb.signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await fb.signInAnonymously(auth);
+                }
+                fb.onAuthStateChanged(auth, (u) => {
+                    user = u;
+                    if(user) syncCloud();
+                });
+            } catch (e) { console.error("Firebase Error", e); }
+        }
+
+        async function syncCloud() {
+            const { fb } = window;
+            const ref = fb.doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'appData');
+            const snap = await fb.getDoc(ref);
+            if(snap.exists()) {
+                const cloudData = snap.data();
+                state.cards = cloudData.cards || [];
+                state.installments = cloudData.installments || [];
+                if(cloudData.theme) state.theme = cloudData.theme;
+                if(cloudData.admin) state.admin = cloudData.admin;
+                
+                localStorage.setItem(DB_KEY, JSON.stringify(state));
+                applyTheme(state.theme.color);
+                renderViewport();
+            } else {
+                // First time sync
+                forceSave();
+            }
+        }
+
+        function forceSave() {
+            localStorage.setItem(DB_KEY, JSON.stringify(state));
+            updateSaveBanner('saving');
+            
+            if(saveTimeout) clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(async () => {
+                if(!user || !db) return;
+                const { fb } = window;
+                try {
+                    const ref = fb.doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'appData');
+                    await fb.setDoc(ref, {
+                        cards: state.cards,
+                        installments: state.installments,
+                        theme: state.theme,
+                        admin: state.admin
+                    });
+                    updateSaveBanner('success');
+                } catch(e) { updateSaveBanner('error'); }
+            }, 1000);
+        }
+
+        // --- WEATHER API ---
+        function fetchWeather() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(async (pos) => {
+                    const { latitude, longitude } = pos.coords;
+                    try {
+                        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&air_quality=pm2_5`);
+                        const data = await res.json();
+                        const pmRes = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&current=pm2_5`);
+                        const pmData = await pmRes.json();
+
+                        state.weather = {
+                            temp: data.current.temperature_2m.toFixed(1),
+                            condition: getWeatherCodeDesc(data.current.weather_code),
+                            pm25: pmData.current.pm2_5.toFixed(0),
+                            location: 'พิกัดของคุณ'
+                        };
+                        if(state.tab === 'home') renderViewport();
+                    } catch (e) { console.error('Weather error', e); }
+                }, (err) => {
+                    console.warn("Location denied");
+                    state.weather.condition = "ระบุพิกัดไม่ได้";
+                    if(state.tab === 'home') renderViewport();
+                });
+            }
+        }
+
+        function getWeatherCodeDesc(code) {
+            if (code === 0) return 'ฟ้าโปร่งแจ่มใส';
+            if (code <= 3) return 'มีเมฆบางส่วน';
+            if (code >= 45 && code <= 48) return 'มีหมอกบางๆ';
+            if (code >= 51 && code <= 67) return 'มีฝนตกปรอยๆ';
+            if (code >= 80) return 'ฝนตกหนัก';
+            return 'อากาศเปลี่ยนแปลง';
+        }
+
+        function getPMColor(val) {
+            if(val === '--') return 'text-slate-200';
+            const v = Number(val);
+            if (v <= 25) return 'text-emerald-400';
+            if (v <= 50) return 'text-yellow-400';
+            return 'text-rose-400';
+        }
+
+        // --- UI UPDATES & ANIMATIONS ---
+        function updateSaveBanner(status) {
+            const banner = document.getElementById('save-banner');
+            const msg = document.getElementById('save-msg');
+            const icon = document.getElementById('save-icon-box');
+            banner.classList.add('visible');
+            
+            if(status === 'saving') {
+                msg.innerText = "กำลังซิงค์คลาวด์...";
+                msg.className = "text-[10px] font-bold text-orange-500 uppercase tracking-widest";
+                icon.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-[10px] text-orange-500"></i>';
+            } else if(status === 'success') {
+                msg.innerText = "ข้อมูลปลอดภัยแล้ว";
+                msg.className = "text-[10px] font-bold text-emerald-600 uppercase tracking-widest";
+                icon.innerHTML = '<i class="fa-solid fa-check text-[10px] text-emerald-500"></i>';
+                setTimeout(() => banner.classList.remove('visible'), 2000);
+            } else {
+                msg.innerText = "เซฟลงเครื่องแล้ว (ออฟไลน์)";
+                msg.className = "text-[10px] font-bold text-red-500 uppercase tracking-widest";
+                icon.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-[10px] text-red-500"></i>';
+                setTimeout(() => banner.classList.remove('visible'), 3000);
+            }
+        }
+
+        function applyTheme(c) {
+            document.documentElement.style.setProperty('--primary', c);
+            state.theme.color = c;
+        }
+
+        // --- NAVIGATION & TABS ---
+        window.switchTab = (t) => {
+            state.tab = t;
+            const tabs = ['home', 'cards', 'installments', 'summary'];
+            tabs.forEach(item => {
+                const b = document.getElementById(`tab-${item}`);
+                if(b) {
+                    if(t === item) {
+                        b.classList.add('tab-active');
+                        b.classList.remove('tab-inactive');
+                    } else {
+                        b.classList.remove('tab-active');
+                        b.classList.add('tab-inactive');
+                    }
+                }
+            });
+            renderViewport();
+        };
+
+        // --- RENDER ENGINE ---
+        function renderViewport() {
+            const container = document.getElementById('view-container');
+            if(!container) return;
+            
+            // Check Admin Status
+            const themeBtn = document.getElementById('theme-btn');
+            if(state.admin) themeBtn.classList.remove('hidden');
+            
+            // Check Notifications
+            updateNotifs();
+            
+            container.innerHTML = '';
+            const t = state.tab;
+
+            if (t === 'home') {
+                renderHome(container);
+            } else if (t === 'cards') {
+                renderCards(container);
+            } else if (t === 'installments') {
+                renderInstallments(container);
+            } else if (t === 'summary') {
+                renderSummary(container);
+            }
+        }
+
+        // --- VIEWS ---
+        function renderHome(container) {
+            // Calculate Current Month Total
+            const today = new Date();
+            const thisYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+            const currentMonthTotal = state.installments.reduce((sum, item) => {
+                const start = item.startMonth;
+                const end = shiftMonthStr(item.startMonth, item.dur - 1);
+                if (thisYm >= start && thisYm <= end) return sum + item.amount;
+                return sum;
+            }, 0);
+
+            // Determine greeting based on time
+            const hour = today.getHours();
+            let greeting = 'สวัสดีค่ะ';
+            if(hour < 12) greeting = 'อรุณสวัสดิ์ค่ะ';
+            else if(hour < 18) greeting = 'สวัสดีตอนบ่ายค่ะ';
+            else greeting = 'สวัสดีตอนค่ำค่ะ';
+
+            container.innerHTML = `
+                <div class="space-y-5 fade-in">
+                    
+                    <!-- Greeting -->
+                    <div class="px-2 pt-2">
+                        <h2 class="text-2xl font-black text-slate-800 tracking-tight">${greeting} คุณเบนซ์ ✨</h2>
+                        <p class="text-xs font-bold text-slate-500 mt-1">พร้อมจัดการการเงินของวันนี้หรือยังคะ?</p>
+                    </div>
+
+                    <!-- Weather Widget -->
+                    <div class="weather-gradient p-6 rounded-3xl text-white shadow-xl shadow-blue-200/50 relative overflow-hidden">
+                        <div class="flex justify-between items-start mb-6 relative z-10">
+                            <div>
+                                <p class="text-[10px] font-bold text-blue-200 flex items-center gap-1 uppercase tracking-widest"><i class="fa-solid fa-location-dot"></i> ${state.weather.location}</p>
+                                <h3 class="text-5xl font-black mt-2 tracking-tighter">${state.weather.temp}°<span class="text-2xl text-blue-200">C</span></h3>
+                            </div>
+                            <i class="fa-solid fa-sun text-4xl text-yellow-300 drop-shadow-md animate-[spin_10s_linear_infinite]"></i>
+                        </div>
+                        <div class="flex justify-between items-center bg-white/20 p-3.5 rounded-2xl backdrop-blur-md relative z-10 border border-white/10">
+                            <div class="flex items-center gap-2.5">
+                                <i class="fa-solid fa-wind text-blue-100"></i>
+                                <span class="text-xs font-bold text-blue-50">ฝุ่น PM 2.5: <span class="text-sm font-black ${getPMColor(state.weather.pm25)} bg-slate-900/40 px-2 py-0.5 rounded-lg ml-1">${state.weather.pm25}</span></span>
+                            </div>
+                            <span class="text-[10px] font-bold text-white uppercase tracking-widest">${state.weather.condition}</span>
+                        </div>
+                        <!-- Decoration -->
+                        <i class="fa-solid fa-cloud absolute -bottom-4 -right-4 text-7xl text-white/10"></i>
+                    </div>
+
+                    <!-- Quick Insight -->
+                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 bg-theme-primary/10 rounded-2xl flex items-center justify-center text-theme-primary">
+                                <i class="fa-solid fa-wallet text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">ยอดต้องจ่ายเดือนนี้</p>
+                                <p class="text-2xl font-black text-slate-800">${toCurr(currentMonthTotal)}</p>
+                            </div>
+                        </div>
+                        <button onclick="switchTab('summary')" class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary hover:bg-theme-primary/10 transition-colors">
+                            <i class="fa-solid fa-chevron-right text-xs"></i>
+                        </button>
+                    </div>
+
+                    <!-- Mini Alerts -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-orange-50 p-4 rounded-3xl border border-orange-100/50">
+                            <i class="fa-solid fa-clock text-orange-500 mb-3 text-lg"></i>
+                            <p class="text-[9px] font-bold text-orange-600/80 uppercase tracking-widest mb-1">บัตรใกล้ตัดรอบ</p>
+                            <p class="text-sm font-bold text-slate-800 truncate">${state.cards.length > 0 ? state.cards[0].name : 'ยังไม่มีข้อมูล'}</p>
+                        </div>
+                        <div class="bg-emerald-50 p-4 rounded-3xl border border-emerald-100/50">
+                            <i class="fa-solid fa-shield-check text-emerald-500 mb-3 text-lg"></i>
+                            <p class="text-[9px] font-bold text-emerald-600/80 uppercase tracking-widest mb-1">สถานะระบบ</p>
+                            <p class="text-sm font-bold text-slate-800">Auto-Sync On</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderCards(container) {
+            container.innerHTML = `
+                <div class="fade-in space-y-4">
+                    <div class="flex justify-between items-center px-1 mb-2">
+                        <h2 class="text-lg font-black text-slate-800">บัตรเครดิตของฉัน</h2>
+                        <button onclick="openCardForm()" class="bg-theme-primary text-white w-8 h-8 rounded-full flex items-center justify-center shadow-lg shadow-orange-200/50 active:scale-90 transition-transform"><i class="fa-solid fa-plus text-sm"></i></button>
+                    </div>
+
+                    ${state.cards.length === 0 ? `
+                        <div class="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-200">
+                            <i class="fa-solid fa-credit-card text-4xl text-slate-200 mb-3"></i>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">เพิ่มบัตรใบแรกเพื่อเริ่มใช้งานค่ะ</p>
+                        </div>
+                    ` : state.cards.map(c => {
+                        const used = state.installments.filter(i => i.cardId === c.id).reduce((sum, i) => sum + i.amount, 0);
+                        const pct = Math.min((used / c.limit) * 100, 100);
+                        return `
+                            <div class="card-gradient p-6 rounded-[2rem] text-white shadow-xl relative overflow-hidden group">
+                                <div class="flex justify-between items-start relative z-10 mb-6">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-sm"><i class="fa-solid fa-microchip text-xs text-white/70"></i></div>
+                                        <h3 class="font-black text-xl tracking-wide">${c.name}</h3>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button onclick="editCard('${c.id}')" class="w-7 h-7 bg-white/10 rounded-full flex items-center justify-center text-[10px] hover:bg-theme-primary transition-colors"><i class="fa-solid fa-pen"></i></button>
+                                        <button onclick="delCard('${c.id}')" class="w-7 h-7 bg-white/10 rounded-full flex items-center justify-center text-[10px] text-white/50 hover:bg-red-500 hover:text-white transition-colors"><i class="fa-solid fa-trash"></i></button>
+                                    </div>
+                                </div>
+                                
+                                <div class="relative z-10 space-y-3">
+                                    <div>
+                                        <div class="flex justify-between text-[9px] font-bold text-white/50 uppercase tracking-widest mb-1.5">
+                                            <span>ใช้ไป ${toCurr(used)}</span>
+                                            <span>${pct.toFixed(0)}%</span>
+                                        </div>
+                                        <div class="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                            <div class="h-full bg-theme-primary transition-all duration-1000" style="width: ${pct}%"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex justify-between items-end pt-2">
+                                        <div>
+                                            <p class="text-[8px] text-white/40 font-bold uppercase tracking-widest mb-0.5">วงเงินรวม</p>
+                                            <p class="text-lg font-bold">${toCurr(c.limit)}</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-[8px] text-white/40 font-bold uppercase tracking-widest mb-0.5">วันตัดรอบ</p>
+                                            <p class="text-2xl font-black text-theme-primary leading-none">${c.date}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Background Decoration -->
+                                <i class="fa-brands fa-cc-visa absolute -bottom-6 -right-6 text-8xl text-white/5 opacity-50 group-hover:scale-110 transition-transform duration-500"></i>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function renderInstallments(container) {
+            container.innerHTML = `
+                <div class="fade-in space-y-4">
+                    <div class="flex justify-between items-center px-1 mb-2">
+                        <h2 class="text-lg font-black text-slate-800">รายการผ่อนชำระ</h2>
+                        <button onclick="openInstForm()" class="bg-theme-primary text-white w-8 h-8 rounded-full flex items-center justify-center shadow-lg shadow-orange-200/50 active:scale-90 transition-transform"><i class="fa-solid fa-plus text-sm"></i></button>
+                    </div>
+
+                    ${state.installments.length === 0 ? `
+                        <div class="text-center py-20 bg-white rounded-3xl border border-slate-100">
+                            <i class="fa-solid fa-cart-shopping text-4xl text-slate-200 mb-3"></i>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">ยังไม่มีรายการผ่อนค่ะ</p>
+                        </div>
+                    ` : `
+                        <div class="space-y-3">
+                            ${state.installments.map(i => {
+                                const card = state.cards.find(c => c.id === i.cardId);
+                                return `
+                                    <div class="bg-white p-4.5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center group">
+                                        <div class="flex items-center gap-4">
+                                            <div class="w-11 h-11 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 shrink-0 group-hover:bg-theme-primary/10 group-hover:text-theme-primary transition-colors">
+                                                <i class="fa-solid fa-box-open text-sm"></i>
+                                            </div>
+                                            <div>
+                                                <h4 class="font-black text-slate-800 text-sm leading-tight">${i.name}</h4>
+                                                <p class="text-[9px] font-bold text-slate-400 mt-1 tracking-wider uppercase"><i class="fa-regular fa-credit-card mr-1"></i>${card?.name || '-'} | เริ่ม ${i.startMonth}</p>
+                                            </div>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-sm font-black text-theme-primary">${toCurr(i.amount)}</p>
+                                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">${i.dur} งวด</p>
+                                            <button onclick="delInst('${i.id}')" class="text-[9px] font-bold text-red-400 hover:text-red-600 uppercase tracking-widest mt-1.5 transition-colors">ลบรายการ</button>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderSummary(container) {
+            if(state.installments.length === 0) {
+                container.innerHTML = `<div class="py-32 text-center text-slate-300 text-xs font-bold uppercase tracking-widest">เพิ่มรายการผ่อนเพื่อดูสรุปออโต้จ้า</div>`;
+                return;
+            }
+
+            let first = state.installments[0].startMonth;
+            let last = '0000-00';
+            state.installments.forEach(i => {
+                if(i.startMonth < first) first = i.startMonth;
+                const end = shiftMonthStr(i.startMonth, i.dur-1); 
+                if(end > last) last = end;
+            });
+
+            const stats = []; 
+            let cur = first;
+            while(cur <= last && stats.length < 36) {
+                let s = 0; 
+                state.installments.forEach(i => {
+                    const e = shiftMonthStr(i.startMonth, i.dur-1); 
+                    if(cur >= i.startMonth && cur <= e) s += i.amount;
+                });
+                stats.push({ ym: cur, total: s }); 
+                cur = shiftMonthStr(cur, 1);
+            }
+
+            container.innerHTML = `
+                <div class="fade-in space-y-5">
+                    <h2 class="text-lg font-black text-slate-800 px-1">วิเคราะห์แผนการเงิน</h2>
+                    
+                    <div class="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100">
+                        <div class="h-56 w-full"><canvas id="sumChart"></canvas></div>
+                    </div>
+                    
+                    <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+                        <div class="p-4 bg-slate-50/50 flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                            <span>ประจำเดือน</span>
+                            <span>ยอดจ่ายรวมออโต้</span>
+                        </div>
+                        <div class="divide-y divide-slate-50">
+                            ${stats.map(s => `
+                                <div class="p-5 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                                    <div>
+                                        <p class="text-sm font-black text-slate-800">${formatThaiMonth(s.ym)}</p>
+                                    </div>
+                                    <p class="text-sm font-black text-theme-primary">${toCurr(s.total)}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Draw Chart
+            setTimeout(() => {
+                const canvas = document.getElementById('sumChart');
+                if(!canvas) return;
+                const ctx = canvas.getContext('2d');
+                if(chartInstance) chartInstance.destroy();
+                
+                const themeColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
+                
+                chartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: stats.map(s => {
+                            const [y, m] = s.ym.split('-');
+                            const mName = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][parseInt(m)-1];
+                            return `${mName} ${y.slice(2)}`;
+                        }),
+                        datasets: [{
+                            data: stats.map(s => s.total),
+                            backgroundColor: themeColor,
+                            borderRadius: 6,
+                            barThickness: 16
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { display: false, beginAtZero: true },
+                            x: { grid: { display: false }, ticks: { font: { family: 'Kanit', size: 9 }, color: '#94a3b8' }, border: {display: false} }
+                        },
+                        animation: { duration: 1000, easing: 'easeOutQuart' }
+                    }
+                });
+            }, 100);
+        }
+
+        // --- HELPERS ---
+        const toCurr = (v) => '฿' + Number(v).toLocaleString(undefined, {minimumFractionDigits: 0});
+        
+        function formatThaiMonth(ym) {
+            const m = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+            const [y, mm] = ym.split('-'); 
+            return `${m[parseInt(mm)-1]} ${y}`;
+        }
+        
+        function shiftMonthStr(ym, n) {
+            const [y, m] = ym.split('-').map(Number);
+            const d = new Date(y, m - 1 + n, 1);
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        }
+
+        // --- MODALS & FORMS ---
+        window.closeModal = () => document.getElementById('modal-overlay').classList.add('hidden');
+        function openModal(t, h) {
+            document.getElementById('modal-content').innerHTML = `<h3 class="text-xl font-black mb-5 text-slate-800">${t}</h3>${h}`;
+            document.getElementById('modal-overlay').classList.remove('hidden');
+        }
+
+        // Cards Form
+        window.openCardForm = () => {
+            openModal('เพิ่มบัตรเครดิต', `
+                <div class="space-y-4">
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ชื่อบัตร</label><input id="in-n" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="เช่น KBank, SCB"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">วงเงินรวม (บาท)</label><input id="in-l" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="ระบุตัวเลข"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">วันตัดรอบ (วันที่)</label><input id="in-d" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="1-31"></div>
+                    <button onclick="commitCard()" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-orange-200 mt-2 active:scale-95 transition-transform">บันทึกข้อมูล</button>
+                </div>
+            `);
+        };
+        window.commitCard = () => {
+            const n = document.getElementById('in-n').value, l = document.getElementById('in-l').value, d = document.getElementById('in-d').value;
+            if(!n || !l || !d) return alert('กรอกข้อมูลให้ครบนะคะเบนซ์');
+            state.cards.push({ id: Date.now().toString(), name: n, limit: Number(l), date: Number(d) });
+            closeModal(); renderViewport(); forceSave();
+        };
+
+        window.editCard = (id) => {
+            const c = state.cards.find(x => x.id === id);
+            openModal('แก้ไขบัตร', `
+                <div class="space-y-4">
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ชื่อบัตร</label><input id="in-n" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${c.name}"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">วงเงินรวม (บาท)</label><input id="in-l" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${c.limit}"></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">วันตัดรอบ (วันที่)</label><input id="in-d" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${c.date}"></div>
+                    <button onclick="updateCard('${id}')" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-orange-200 mt-2 active:scale-95 transition-transform">อัปเดตข้อมูล</button>
+                </div>
+            `);
+        };
+        window.updateCard = (id) => {
+            const idx = state.cards.findIndex(x => x.id === id);
+            state.cards[idx] = { ...state.cards[idx], name: document.getElementById('in-n').value, limit: Number(document.getElementById('in-l').value), date: Number(document.getElementById('in-d').value) };
+            closeModal(); renderViewport(); forceSave();
+        };
+
+        // Installment Form
+        window.openInstForm = () => {
+            if(state.cards.length === 0) return alert('รบกวนเพิ่มบัตรก่อนใช้งานนะคะเบนซ์');
+            openModal('เพิ่มรายการผ่อน', `
+                <div class="space-y-4">
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">เลือกบัตร</label><select id="in-cid" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1 appearance-none">${state.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ชื่อสินค้า/รายการ</label><input id="in-item" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="เช่น iPhone 15"></div>
+                    <div class="flex gap-3">
+                        <div class="flex-1"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">เริ่มงวดแรก</label><input id="in-s" type="month" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1 w-full"></div>
+                        <div class="w-24"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">จำนวนงวด</label><input id="in-dr" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="10"></div>
+                    </div>
+                    <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ยอดจ่ายต่อเดือน (บาท)</label><input id="in-a" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="ระบุตัวเลข"></div>
+                    <button onclick="commitInst()" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-orange-200 mt-2 active:scale-95 transition-transform">บันทึกรายการ</button>
+                </div>
+            `);
+        };
+        window.commitInst = () => {
+            const cid = document.getElementById('in-cid').value, n = document.getElementById('in-item').value, s = document.getElementById('in-s').value, d = document.getElementById('in-dr').value, a = document.getElementById('in-a').value;
+            if(!n || !s || !d || !a) return alert('ใส่ข้อมูลไม่ครบค่ะเบนซ์');
+            state.installments.push({ id: Date.now().toString(), cardId: cid, name: n, startMonth: s, dur: Number(d), amount: Number(a) });
+            closeModal(); renderViewport(); forceSave();
+        };
+
+        // Deletes
+        window.delCard = (id) => { if(confirm("ลบบัตรนี้รายการผ่อนจะหายเกลี้ยงเลยนะคะ ยืนยันไหม?")) { state.cards = state.cards.filter(x => x.id !== id); state.installments = state.installments.filter(x => x.cardId !== id); renderViewport(); forceSave(); } };
+        window.delInst = (id) => { if(confirm("ลบรายการผ่อนนี้นะคะ?")) { state.installments = state.installments.filter(x => x.id !== id); renderViewport(); forceSave(); } };
+
+        // --- ADMIN & THEME ---
+        window.startAdminTimer = () => {
+            timer = setTimeout(() => {
+                const pass = prompt("เข้าสู่โหมด Admin (ใส่รหัสผ่าน):");
+                if(pass === "MEETANG-ADMIN") {
+                    state.admin = true;
+                    forceSave();
+                    alert("เปิดสิทธิ์ Admin แล้วค่ะ!");
+                    renderViewport();
+                } else if(pass !== null) alert("รหัสผิดค่ะ!");
+            }, 2000);
+        };
+        window.clearAdminTimer = () => clearTimeout(timer);
+
+        window.showThemeMenu = () => {
+            openModal('เปลี่ยนสีสันของแอป', `
+                <div class="grid grid-cols-3 gap-3">
+                    ${[
+                        {c: '#f97316', n: 'Orange'}, {c: '#3b82f6', n: 'Blue'}, {c: '#10b981', n: 'Green'}, 
+                        {c: '#8b5cf6', n: 'Purple'}, {c: '#f43f5e', n: 'Rose'}, {c: '#0f172a', n: 'Dark'}
+                    ].map(t => `
+                        <button onclick="setTheme('${t.c}')" class="h-20 rounded-2xl shadow-sm border-2 ${state.theme.color === t.c ? 'border-slate-800 scale-95' : 'border-transparent'} flex flex-col items-center justify-center gap-2 transition-all" style="background-color: ${t.c}10">
+                            <div class="w-6 h-6 rounded-full" style="background-color: ${t.c}"></div>
+                            <span class="text-[9px] font-bold text-slate-600 uppercase">${t.n}</span>
+                        </button>
+                    `).join('')}
+                </div>
+            `);
+        };
+        window.setTheme = (c) => { applyTheme(c); forceSave(); closeModal(); renderViewport(); };
+
+        // --- NOTIFICATIONS ---
+        window.showNotifs = () => {
+            const today = new Date().getDate();
+            const list = state.cards.filter(c => {
+                const diff = c.date - today;
+                return diff >= 0 && diff <= 3;
+            });
+            openModal('การแจ้งเตือน', `
+                <div class="space-y-3">
+                    ${list.length === 0 ? '<p class="text-center text-slate-400 py-8 text-xs font-bold uppercase tracking-widest">ยังไม่มีเรื่องด่วนค่ะเบนซ์ ✌️</p>' : list.map(c => `
+                        <div class="p-4 rounded-2xl bg-slate-50 flex items-center gap-4">
+                            <div class="w-10 h-10 bg-theme-primary/10 rounded-full flex items-center justify-center text-theme-primary"><i class="fa-solid fa-clock"></i></div>
+                            <div>
+                                <p class="text-sm font-black text-slate-800">บัตร ${c.name}</p>
+                                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">ตัดรอบใน ${c.date - today === 0 ? 'วันนี้!' : 'อีก ' + (c.date - today) + ' วัน'}</p>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `);
+        };
+        function updateNotifs() {
+            const today = new Date().getDate();
+            const has = state.cards.some(c => (c.date - today) >= 0 && (c.date - today) <= 3);
+            const dot = document.getElementById('notif-dot');
+            if(dot) { if(has) dot.classList.remove('hidden'); else dot.classList.add('hidden'); }
+        }
+
+        // Start Application
+        window.onload = run;
+    </script>
+</body>
+</html>
