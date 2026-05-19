@@ -1,1065 +1,1729 @@
 <!DOCTYPE html>
 <html lang="th">
-
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Meetang - Smart Tracker</title>
-
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#f97316">
   <link rel="apple-touch-icon" href="icon-192.png">
-
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700;800;900&display=swap');
+    :root { --primary: #f97316; --primary-light: #fff7ed; }
 
-    :root {
-      --primary: #f97316;
-      --primary-light: #fff7ed;
-    }
+    * { box-sizing: border-box; }
 
     body {
       font-family: 'Kanit', sans-serif;
       -webkit-tap-highlight-color: transparent;
-      background-color: #f8fafc;
+      background-color: #f1f5f9;
       color: #0f172a;
+      overscroll-behavior: none;
     }
 
-    .text-theme-primary {
-      color: var(--primary);
-    }
+    /* ── Theme helpers ── */
+    .text-theme-primary  { color: var(--primary); }
+    .bg-theme-primary    { background-color: var(--primary); }
+    .border-theme-primary{ border-color: var(--primary); }
+    .shadow-theme        { box-shadow: 0 8px 24px color-mix(in srgb, var(--primary) 30%, transparent); }
 
-    .bg-theme-primary {
-      background-color: var(--primary);
-    }
+    /* ── Gradients ── */
+    .card-gradient    { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); }
+    .weather-gradient { background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); }
+    .ai-gradient      { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); }
+    .gold-gradient    { background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%); }
+    .stock-gradient   { background: linear-gradient(135deg, #2bb0ff 0%, #0077d6 100%); }
 
-    .border-theme-primary {
-      border-color: var(--primary);
-    }
-
-    .tab-active {
-      color: var(--primary);
-      transform: scale(1.05);
-      transition: all 0.3s;
-    }
-
-    .tab-inactive {
-      color: #94a3b8;
-    }
-
-    .card-gradient {
-      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-    }
-
-    .weather-gradient {
-      background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
-    }
-
-    .ai-gradient {
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    }
-
-    .gold-gradient {
-      background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%);
-    }
-
-    /* Custom Dime-like Style from Benz */
-    .dime-gradient {
-      background: linear-gradient(180deg, #2bb0ff 0%, #0077d6 100%);
-    }
-
-    .safe-pb {
-      padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 100px);
-    }
-
-    .bottom-sheet {
-      animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    @keyframes slideUp {
-      from {
-        transform: translateY(100%);
-      }
-
-      to {
-        transform: translateY(0);
-      }
-    }
-
-    .fade-in {
-      animation: fadeIn 0.4s ease-out;
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .logo-btn:active {
-      transform: scale(0.9);
-    }
-
-    #save-banner {
-      transition: all 0.3s ease;
-      max-height: 0;
-      opacity: 0;
+    /* ── Layout ── */
+    #app-wrapper {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      max-width: 430px;
+      margin: 0 auto;
+      position: relative;
       overflow: hidden;
     }
 
-    #save-banner.visible {
-      max-height: 40px;
-      opacity: 1;
-      margin-top: 8px;
-      padding: 4px 16px;
+    /* Sticky header */
+    #app-header {
+      flex-shrink: 0;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid #f1f5f9;
+      z-index: 40;
     }
 
+    /* Scrollable content area — ends at nav */
+    #view-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      padding: 20px 16px;
+      padding-bottom: 24px; /* inner breathing room; nav is outside */
+    }
+
+    /* Fixed bottom nav — OUTSIDE scroll area */
+    #bottom-nav {
+      flex-shrink: 0;
+      height: 72px;
+      background: #ffffff;
+      border-top: 1px solid #f1f5f9;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.06);
+      z-index: 40;
+    }
+
+    .nav-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      flex: 1;
+      height: 100%;
+      color: #94a3b8;
+      transition: color 0.2s, transform 0.2s;
+      position: relative;
+    }
+    .nav-btn .nav-icon { font-size: 18px; }
+    .nav-btn .nav-label { font-size: 9px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+    .nav-btn.active { color: var(--primary); }
+    .nav-btn.active::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 25%; right: 25%;
+      height: 2.5px;
+      background: var(--primary);
+      border-radius: 0 0 4px 4px;
+    }
+    .nav-btn:active { transform: scale(0.88); }
+
+    /* ── Animations ── */
+    .fade-in {
+      animation: fadeIn 0.35s ease-out both;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .slide-up {
+      animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0); }
+    }
+
+    /* ── Save banner ── */
+    #save-banner {
+      overflow: hidden; max-height: 0; opacity: 0;
+      transition: all 0.3s ease;
+    }
+    #save-banner.visible {
+      max-height: 36px; opacity: 1;
+      margin-top: 6px; padding: 3px 14px;
+    }
+
+    /* ── Modal ── */
+    #modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(15,23,42,0.55);
+      z-index: 60;
+      display: none;
+      flex-direction: column;
+      justify-content: flex-end;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+    #modal-overlay.open { display: flex; }
+    #modal-box {
+      background: #fff;
+      width: 100%; max-width: 430px;
+      margin: 0 auto;
+      border-radius: 2rem 2rem 0 0;
+      padding: 20px 24px 32px;
+      padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px));
+      max-height: 90dvh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .modal-drag { width: 44px; height: 5px; background: #e2e8f0; border-radius: 99px; margin: 0 auto 20px; }
+
+    /* ── Cards & Items ── */
+    .item-card {
+      background: #fff;
+      border-radius: 20px;
+      border: 1px solid #f1f5f9;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .item-card:active { transform: scale(0.98); transition: transform 0.1s; }
+
+    /* ── Inputs ── */
+    .input-field {
+      width: 100%;
+      padding: 14px 16px;
+      background: #f8fafc;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 16px;
+      outline: none;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: 'Kanit', sans-serif;
+      transition: border-color 0.2s;
+    }
+    .input-field:focus { border-color: var(--primary); background: #fff; }
+
+    /* ── Pill toggle ── */
+    .pill-group { display: flex; background: #f1f5f9; border-radius: 14px; padding: 4px; gap: 4px; }
+    .pill-group label { flex: 1; }
+    .pill-group label input[type="radio"] { display: none; }
+    .pill-opt {
+      display: block; text-align: center;
+      padding: 9px 4px;
+      border-radius: 10px;
+      font-size: 11px; font-weight: 700;
+      color: #94a3b8;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .pill-group label input:checked + .pill-opt {
+      background: #fff;
+      color: #1e293b;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    /* ── Shimmer ── */
     .shimmer {
-      background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0) 100%);
+      background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.25) 50%, rgba(255,255,255,0) 100%);
       background-size: 200% 100%;
       animation: shimmer 1.5s infinite;
     }
+    @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
 
-    @keyframes shimmer {
-      0% {
-        background-position: -200% 0;
-      }
+    /* ── Progress bar ── */
+    .progress-track { width: 100%; height: 5px; background: rgba(255,255,255,0.15); border-radius: 99px; overflow: hidden; }
+    .progress-fill  { height: 100%; background: var(--primary); border-radius: 99px; transition: width 1s ease; }
 
-      100% {
-        background-position: 200% 0;
-      }
+    /* ── Scrollbar hide ── */
+    #view-container::-webkit-scrollbar { display: none; }
+    #view-container { scrollbar-width: none; }
+    #modal-box::-webkit-scrollbar { display: none; }
+
+    /* ── FAB ── */
+    .fab {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      box-shadow: 0 6px 20px color-mix(in srgb, var(--primary) 35%, transparent);
+      transition: transform 0.15s;
     }
+    .fab:active { transform: scale(0.88); }
+
+    /* ── Section header ── */
+    .section-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 14px;
+    }
+    .section-head h2 { font-size: 20px; font-weight: 900; color: #1e293b; }
+
+    /* ── Empty state ── */
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      background: #fff;
+      border-radius: 24px;
+      border: 2px dashed #e2e8f0;
+    }
+    .empty-state i { font-size: 36px; color: #cbd5e1; margin-bottom: 12px; display: block; }
+    .empty-state p { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em; }
+
+    /* ── Summary table ── */
+    .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; }
+    .summary-row + .summary-row { border-top: 1px solid #f8fafc; }
   </style>
 </head>
 
-<body class="min-h-screen relative">
+<body>
+<div id="app-wrapper">
 
-  <header
-    class="bg-white/90 backdrop-blur-md px-6 py-4 sticky top-0 z-40 flex flex-col shadow-sm border-b border-slate-100">
-    <div class="flex justify-between items-center w-full">
+  <!-- ══ HEADER ══ -->
+  <header id="app-header" class="px-5 pt-4 pb-3">
+    <div class="flex justify-between items-center">
       <div class="flex items-center gap-3">
-        <button class="logo-btn transition-transform outline-none">
-          <div
-            class="w-10 h-10 bg-theme-primary rounded-2xl flex items-center justify-center text-white shadow-lg shadow-orange-200">
-            <i class="fa-solid fa-cat text-xl"></i></div>
-        </button>
-        <div class="flex flex-col">
-          <h1 class="text-lg font-black text-slate-800 leading-none tracking-tight">MEETANG</h1>
-          <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Smart Tracker 🔒</p>
+        <div class="w-10 h-10 bg-theme-primary rounded-[14px] flex items-center justify-center text-white shadow-theme">
+          <i class="fa-solid fa-cat text-lg"></i>
+        </div>
+        <div>
+          <h1 class="text-[17px] font-black text-slate-800 leading-none tracking-tight">MEETANG</h1>
+          <p class="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Smart Tracker 🔒</p>
         </div>
       </div>
-
       <div class="flex items-center gap-2">
-        <button onclick="showSettingsMenu()"
-          class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary transition-colors"><i
-            class="fa-solid fa-gear text-sm"></i></button>
-        <button onclick="showNotifs()"
-          class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 relative hover:text-theme-primary transition-all">
+        <button onclick="showSettingsMenu()" class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:text-theme-primary transition-colors">
+          <i class="fa-solid fa-gear text-sm"></i>
+        </button>
+        <button onclick="showNotifs()" class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 relative hover:text-theme-primary transition-all">
           <i class="fa-solid fa-bell text-sm"></i>
-          <div id="notif-dot"
-            class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full hidden border-2 border-white"></div>
+          <div id="notif-dot" class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full hidden border-2 border-white"></div>
         </button>
       </div>
     </div>
-    <div id="save-banner"
-      class="flex items-center justify-center gap-2 bg-emerald-50 rounded-full mx-auto border border-emerald-100">
-      <span id="save-icon-box"><i class="fa-solid fa-check text-[10px] text-emerald-500"></i></span>
-      <span id="save-msg"
-        class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">บันทึกลงเครื่องเรียบร้อย</span>
+    <div id="save-banner" class="flex items-center justify-center gap-2 bg-emerald-50 rounded-full mx-auto border border-emerald-100">
+      <i class="fa-solid fa-check text-[10px] text-emerald-500"></i>
+      <span class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">บันทึกเรียบร้อยแล้วค่ะ</span>
     </div>
   </header>
 
-  <main class="p-5 max-w-md mx-auto w-full safe-pb" id="view-container">
-    <div class="flex flex-col items-center justify-center py-40">
+  <!-- ══ SCROLLABLE CONTENT ══ -->
+  <main id="view-container">
+    <div class="flex flex-col items-center justify-center py-32 fade-in">
       <i class="fa-solid fa-circle-notch fa-spin text-4xl mb-4 text-theme-primary"></i>
-      <p class="text-xs font-bold text-slate-400 uppercase tracking-widest animate-pulse">กำลังโหลดข้อมูล...</p>
+      <p class="text-xs font-bold text-slate-400 uppercase tracking-widest animate-pulse">กำลังโหลด...</p>
     </div>
   </main>
 
-  <div id="modal-overlay" onclick="if(event.target.id === 'modal-overlay') closeModal()"
-    class="fixed inset-0 bg-slate-900/60 z-50 hidden flex flex-col justify-end backdrop-blur-sm">
-    <div
-      class="bg-white w-full max-w-md mx-auto rounded-t-[2.5rem] p-6 bottom-sheet shadow-2xl relative max-h-[85vh] overflow-y-auto">
-      <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6" onclick="closeModal()"></div>
-      <div id="modal-content"></div>
-    </div>
-  </div>
-
-  <nav
-    class="fixed bottom-5 left-5 right-5 h-[72px] bg-white border border-slate-100 rounded-3xl shadow-xl shadow-slate-200/50 flex justify-around items-center px-1 z-40 max-w-md mx-auto">
-    <button onclick="switchTab('home')" id="tab-home"
-      class="flex flex-col items-center justify-center w-full h-full space-y-1.5 text-slate-400"><i
-        class="fa-solid fa-house text-[18px]"></i><span
-        class="text-[8px] font-bold uppercase tracking-wider">หน้าหลัก</span></button>
-    <button onclick="switchTab('cards')" id="tab-cards"
-      class="flex flex-col items-center justify-center w-full h-full space-y-1.5 text-slate-400"><i
-        class="fa-solid fa-credit-card text-[18px]"></i><span
-        class="text-[8px] font-bold uppercase tracking-wider">บัตร</span></button>
-    <button onclick="switchTab('installments')" id="tab-installments"
-      class="flex flex-col items-center justify-center w-full h-full space-y-1.5 text-slate-400"><i
-        class="fa-solid fa-calendar-check text-[18px]"></i><span
-        class="text-[8px] font-bold uppercase tracking-wider">ผ่อน</span></button>
-    <button onclick="switchTab('invest')" id="tab-invest"
-      class="flex flex-col items-center justify-center w-full h-full space-y-1.5 text-slate-400"><i
-        class="fa-solid fa-arrow-trend-up text-[18px]"></i><span
-        class="text-[8px] font-bold uppercase tracking-wider">ลงทุน</span></button>
-    <button onclick="switchTab('summary')" id="tab-summary"
-      class="flex flex-col items-center justify-center w-full h-full space-y-1.5 text-slate-400"><i
-        class="fa-solid fa-chart-pie text-[18px]"></i><span
-        class="text-[8px] font-bold uppercase tracking-wider">วิเคราะห์</span></button>
+  <!-- ══ BOTTOM NAV — outside scroll ══ -->
+  <nav id="bottom-nav">
+    <button class="nav-btn active" id="tab-home" onclick="switchTab('home')">
+      <i class="fa-solid fa-house nav-icon"></i>
+      <span class="nav-label">หน้าหลัก</span>
+    </button>
+    <button class="nav-btn" id="tab-cards" onclick="switchTab('cards')">
+      <i class="fa-solid fa-credit-card nav-icon"></i>
+      <span class="nav-label">บัตร</span>
+    </button>
+    <button class="nav-btn" id="tab-installments" onclick="switchTab('installments')">
+      <i class="fa-solid fa-calendar-check nav-icon"></i>
+      <span class="nav-label">ผ่อน</span>
+    </button>
+    <button class="nav-btn" id="tab-invest" onclick="switchTab('invest')">
+      <i class="fa-solid fa-arrow-trend-up nav-icon"></i>
+      <span class="nav-label">ลงทุน</span>
+    </button>
+    <button class="nav-btn" id="tab-summary" onclick="switchTab('summary')">
+      <i class="fa-solid fa-chart-pie nav-icon"></i>
+      <span class="nav-label">วิเคราะห์</span>
+    </button>
   </nav>
 
-  <input type="file" id="importFile" class="hidden" accept=".txt,.json,.zip" onchange="importData(event)">
+</div><!-- end #app-wrapper -->
 
-  <script>
-    const apiKey = "";
+<!-- ══ MODAL ══ -->
+<div id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div id="modal-box" class="slide-up">
+    <div class="modal-drag" onclick="closeModal()"></div>
+    <div id="modal-content"></div>
+  </div>
+</div>
 
-    async function fetchGeminiAPI(prompt, expectJson = false) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-      const payload = {
-        contents: [{ parts: [{ text: prompt }] }],
-        systemInstruction: { parts: [{ text: "You are 'Kae' (เก๋), a friendly, expert Thai financial advisor assistant inside an app named Meetang. Reply briefly and naturally in Thai. Use emojis to make it engaging. Call the user 'เบนซ์' (Benz). Absolutely NO health, medical, or supplement advice." }] }
+<input type="file" id="importFile" class="hidden" accept=".txt,.json,.zip" onchange="importData(event)">
+
+<script>
+/* ═══════════════════════════════════════════
+   STATE & PERSISTENCE
+═══════════════════════════════════════════ */
+const DB_KEY = 'MEETANG_OFFLINE_V8';
+let chartInstance, saveTimeout;
+
+let state = {
+  cards: [], installments: [], gold: [], stocks: [], marketPrices: {},
+  tab: 'home', investSubTab: 'stocks',
+  theme: { color: '#f97316' },
+  weather: { temp: '--', condition: 'กำลังโหลด...', pm25: '--', location: 'พิกัดปัจจุบัน' },
+  settings: { enableNotif: true, usdRate: 36.5 },
+  lastBackup: ''
+};
+
+const apiKey = "";
+
+/* ─ Formatters ─ */
+const toCurr = (v, currency = 'THB') => Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function formatThaiMonth(ym) {
+  const m = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+  const [y, mm] = ym.split('-');
+  return `${m[parseInt(mm)-1]} ${y}`;
+}
+
+function shiftMonthStr(ym, n) {
+  const [y, mo] = ym.split('-').map(Number);
+  const d = new Date(y, mo - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+/* ─ Boot ─ */
+function run() {
+  let local = localStorage.getItem(DB_KEY) || localStorage.getItem('MEETANG_OFFLINE_V7') || localStorage.getItem('MEETANG_OFFLINE_V6');
+  if (local) {
+    try {
+      const p = JSON.parse(local);
+      state.cards        = p.cards        || [];
+      state.installments = p.installments || [];
+      state.gold         = p.gold         || [];
+      state.stocks       = p.stocks       || [];
+      state.marketPrices = p.marketPrices || {};
+      if (p.theme)    state.theme    = p.theme;
+      if (p.settings) { state.settings = p.settings; if (!state.settings.usdRate) state.settings.usdRate = 36.5; }
+      if (p.lastBackup !== undefined) state.lastBackup = p.lastBackup;
+      applyTheme(state.theme.color);
+    } catch(e) { console.error(e); }
+  }
+  fetchWeather();
+  renderViewport();
+}
+
+function forceSave() {
+  localStorage.setItem(DB_KEY, JSON.stringify({
+    cards: state.cards, installments: state.installments, gold: state.gold,
+    stocks: state.stocks, marketPrices: state.marketPrices,
+    theme: state.theme, settings: state.settings, lastBackup: state.lastBackup
+  }));
+  showSaveBanner();
+}
+
+function showSaveBanner() {
+  const b = document.getElementById('save-banner');
+  b.classList.add('visible');
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => b.classList.remove('visible'), 2200);
+}
+
+/* ─ Theme ─ */
+function applyTheme(c) {
+  document.documentElement.style.setProperty('--primary', c);
+  state.theme.color = c;
+}
+
+/* ─ Tab switching ─ */
+window.switchTab = (t) => {
+  state.tab = t;
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(`tab-${t}`);
+  if (btn) btn.classList.add('active');
+  renderViewport();
+};
+
+window.switchInvestSubTab = (s) => { state.investSubTab = s; renderViewport(); };
+
+/* ─ Modal ─ */
+window.closeModal = () => {
+  const o = document.getElementById('modal-overlay');
+  o.classList.remove('open');
+};
+function openModal(title, body) {
+  document.getElementById('modal-content').innerHTML =
+    `<h3 class="text-xl font-black mb-5 text-slate-800 leading-tight">${title}</h3>${body}`;
+  const o = document.getElementById('modal-overlay');
+  const box = document.getElementById('modal-box');
+  box.classList.remove('slide-up');
+  void box.offsetWidth;
+  box.classList.add('slide-up');
+  o.classList.add('open');
+}
+
+/* ─ Notif dot ─ */
+function updateNotifs() {
+  const dot = document.getElementById('notif-dot'); if (!dot) return;
+  if (!state.settings.enableNotif) { dot.classList.add('hidden'); return; }
+  const today = new Date().getDate();
+  const has = state.cards.some(c => (c.date - today) >= 0 && (c.date - today) <= 3);
+  if (has) dot.classList.remove('hidden'); else dot.classList.add('hidden');
+}
+
+/* ─ Render router ─ */
+function renderViewport() {
+  const c = document.getElementById('view-container');
+  if (!c) return;
+  updateNotifs();
+  c.innerHTML = '';
+  c.scrollTop = 0;
+  if      (state.tab === 'home')         renderHome(c);
+  else if (state.tab === 'cards')        renderCards(c);
+  else if (state.tab === 'installments') renderInstallments(c);
+  else if (state.tab === 'invest')       renderInvest(c);
+  else if (state.tab === 'summary')      renderSummary(c);
+}
+
+/* ═══════════════════════════════════════════
+   WEATHER
+═══════════════════════════════════════════ */
+function fetchWeather() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { latitude: lat, longitude: lon } = pos.coords;
+    try {
+      const [wRes, pmRes] = await Promise.all([
+        fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code`),
+        fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5`)
+      ]);
+      const [wData, pmData] = await Promise.all([wRes.json(), pmRes.json()]);
+      state.weather = {
+        temp: wData.current.temperature_2m.toFixed(1),
+        condition: getWeatherDesc(wData.current.weather_code),
+        pm25: pmData.current.pm2_5.toFixed(0),
+        location: 'พิกัดปัจจุบัน'
       };
-      if (expectJson) payload.generationConfig = { responseMimeType: "application/json" };
-      try {
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        if (!response.ok) throw new Error();
-        const result = await response.json();
-        return expectJson ? JSON.parse(result.candidates[0].content.parts[0].text) : result.candidates[0].content.parts[0].text;
-      } catch (error) { return null; }
+    } catch(e) { state.weather.condition = 'ไม่สามารถโหลดได้'; }
+    if (state.tab === 'home') renderViewport();
+  }, () => {
+    state.weather.condition = 'ไม่ได้รับอนุญาต';
+    if (state.tab === 'home') renderViewport();
+  });
+}
+
+function getWeatherDesc(code) {
+  if (code === 0) return 'ท้องฟ้าแจ่มใส ☀️';
+  if (code <= 3)  return 'มีเมฆบางส่วน ⛅';
+  if (code <= 48) return 'หมอกลง 🌫️';
+  if (code <= 67) return 'ฝนตก 🌧️';
+  if (code <= 77) return 'หิมะตก ❄️';
+  if (code <= 99) return 'พายุฝนฟ้าคะนอง ⛈️';
+  return 'อากาศแปรปรวน';
+}
+
+function getPMBadge(val) {
+  const n = Number(val);
+  if (isNaN(n)) return { color: 'text-slate-300', label: '--', bg: 'bg-slate-900/30' };
+  if (n <= 25)  return { color: 'text-emerald-300', label: 'ดี', bg: 'bg-emerald-500/30' };
+  if (n <= 50)  return { color: 'text-yellow-300',  label: 'ปานกลาง', bg: 'bg-yellow-500/30' };
+  if (n <= 100) return { color: 'text-orange-300',  label: 'เริ่มมีผล', bg: 'bg-orange-500/30' };
+  return { color: 'text-red-300', label: 'อันตราย', bg: 'bg-red-500/30' };
+}
+
+/* ═══════════════════════════════════════════
+   PAGE: HOME
+═══════════════════════════════════════════ */
+function renderHome(container) {
+  const today = new Date();
+  const thisYm = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  const currentMonthTotal = state.installments.reduce((sum, item) => {
+    const end = shiftMonthStr(item.startMonth, item.dur - 1);
+    return (thisYm >= item.startMonth && thisYm <= end) ? sum + item.amount : sum;
+  }, 0);
+
+  const pm = getPMBadge(state.weather.pm25);
+  const day = today.getDate();
+  const urgentCards = state.settings.enableNotif ? state.cards.filter(c => { const d = c.date - day; return d >= 0 && d <= 3; }) : [];
+
+  let alertHtml = '';
+  if (state.settings.enableNotif) {
+    if (urgentCards.length > 0) {
+      alertHtml = `
+        <div class="item-card p-4 flex items-center gap-4 border-rose-100" style="border-color:#ffe4e6">
+          <div class="w-11 h-11 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-500 shrink-0">
+            <i class="fa-solid fa-clock text-base"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-[10px] font-bold text-rose-400 uppercase tracking-widest">ใกล้ตัดรอบ</p>
+            <p class="text-sm font-black text-slate-800 truncate">${urgentCards.map(c => c.name).join(', ')}</p>
+          </div>
+          <span class="text-[10px] font-bold text-rose-500 bg-rose-50 px-2.5 py-1 rounded-full shrink-0">
+            ${urgentCards[0].date - day === 0 ? 'วันนี้!' : `อีก ${urgentCards[0].date - day} วัน`}
+          </span>
+        </div>`;
+    } else {
+      alertHtml = `
+        <div class="item-card p-4 flex items-center gap-4">
+          <div class="w-11 h-11 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-500 shrink-0">
+            <i class="fa-solid fa-circle-check text-base"></i>
+          </div>
+          <div>
+            <p class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">ตรวจสอบบัตรแล้ว</p>
+            <p class="text-sm font-black text-slate-700">ยังไม่มีดิวใกล้ชำระค่ะ 👍</p>
+          </div>
+        </div>`;
     }
+  }
 
-    let state = {
-      cards: [], installments: [], gold: [], stocks: [], marketPrices: {},
-      tab: 'home', investSubTab: 'stocks', theme: { color: '#f97316' },
-      weather: { temp: '--', condition: 'กำลังโหลด...', pm25: '--', location: 'พิกัดปัจจุบัน' },
-      settings: { enableNotif: true, usdRate: 36.5 }, lastBackup: ''
-    };
+  /* quick-access rows */
+  const totalCards = state.cards.length;
+  const totalInst  = state.installments.length;
+  const totalStocks = [...new Set(state.stocks.map(s => s.symbol))].length;
 
-    const DB_KEY = 'MEETANG_OFFLINE_V8';
-    let chartInstance, saveTimeout;
+  container.innerHTML = `
+    <div class="space-y-4 fade-in">
 
-    const toCurr = (v, currency = 'THB') => {
-      const sym = currency === 'USD' ? '$' : (currency === '' ? '' : '');
-      return sym + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    };
+      <!-- greeting -->
+      <div class="pt-1">
+        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">${getGreeting()}</p>
+        <h2 class="text-2xl font-black text-slate-800 leading-tight mt-0.5">ภาพรวมการเงิน <span class="text-theme-primary">✦</span></h2>
+      </div>
 
-    function formatThaiMonth(ym) {
-      const m = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-      const [y, mm] = ym.split('-');
-      return `${m[parseInt(mm) - 1]} ${y}`;
-    }
+      <!-- weather card -->
+      <div class="weather-gradient p-5 rounded-3xl text-white relative overflow-hidden shadow-lg shadow-blue-300/30">
+        <div class="flex justify-between items-start mb-4 relative z-10">
+          <div>
+            <p class="text-[9px] font-bold text-blue-200 flex items-center gap-1 uppercase tracking-widest mb-1">
+              <i class="fa-solid fa-location-dot"></i>${state.weather.location}
+            </p>
+            <div class="text-5xl font-black tracking-tighter">${state.weather.temp}°<span class="text-2xl font-semibold text-blue-200">C</span></div>
+            <p class="text-xs font-semibold text-blue-100 mt-1">${state.weather.condition}</p>
+          </div>
+          <i class="fa-solid fa-sun text-5xl text-yellow-300 drop-shadow animate-[spin_12s_linear_infinite]"></i>
+        </div>
+        <div class="flex items-center gap-3 bg-white/15 px-4 py-2.5 rounded-2xl backdrop-blur-sm relative z-10">
+          <i class="fa-solid fa-wind text-blue-100 text-sm"></i>
+          <span class="text-xs font-bold text-blue-50">ฝุ่น PM 2.5:</span>
+          <span class="text-sm font-black ${pm.color} ${pm.bg} px-2.5 py-0.5 rounded-lg">${state.weather.pm25} μg/m³</span>
+          <span class="text-[10px] font-bold text-white/70 ml-auto">${pm.label}</span>
+        </div>
+        <i class="fa-solid fa-cloud absolute -bottom-5 -right-5 text-[80px] text-white/8"></i>
+      </div>
 
-    function shiftMonthStr(ym, n) {
-      const [y, m] = ym.split('-').map(Number);
-      const d = new Date(y, m - 1 + n, 1);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    }
+      <!-- monthly installment -->
+      <div class="item-card p-5 flex justify-between items-center">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 bg-theme-primary/10 rounded-2xl flex items-center justify-center text-theme-primary">
+            <i class="fa-solid fa-wallet text-xl"></i>
+          </div>
+          <div>
+            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">ยอดผ่อนเดือนนี้</p>
+            <p class="text-2xl font-black text-slate-800">฿${toCurr(currentMonthTotal)}</p>
+          </div>
+        </div>
+        <button onclick="switchTab('installments')" class="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary hover:bg-theme-primary/10 transition-colors">
+          <i class="fa-solid fa-chevron-right text-xs"></i>
+        </button>
+      </div>
 
-    function run() {
-      let local = localStorage.getItem(DB_KEY) || localStorage.getItem('MEETANG_OFFLINE_V7') || localStorage.getItem('MEETANG_OFFLINE_V6');
-      if (local) {
-        try {
-          const parsed = JSON.parse(local);
-          state.cards = parsed.cards || [];
-          state.installments = parsed.installments || [];
-          state.gold = parsed.gold || [];
-          state.stocks = parsed.stocks || [];
-          state.marketPrices = parsed.marketPrices || {};
-          if (parsed.theme) state.theme = parsed.theme;
-          if (parsed.settings !== undefined) {
-            state.settings = parsed.settings;
-            if (!state.settings.usdRate) state.settings.usdRate = 36.5;
-          }
-          if (parsed.lastBackup !== undefined) state.lastBackup = parsed.lastBackup;
-          applyTheme(state.theme.color);
-        } catch (e) { console.error(e); }
-      }
-      fetchWeather(); renderViewport();
-    }
+      <!-- alert -->
+      ${alertHtml}
 
-    function forceSave() {
-      localStorage.setItem(DB_KEY, JSON.stringify({
-        cards: state.cards, installments: state.installments, gold: state.gold, stocks: state.stocks, marketPrices: state.marketPrices,
-        theme: state.theme, settings: state.settings, lastBackup: state.lastBackup
-      }));
-      showSaveBanner();
-    }
+      <!-- quick stats -->
+      <div class="grid grid-cols-3 gap-3">
+        ${quickStat('fa-credit-card','text-indigo-500','bg-indigo-50', totalCards, 'บัตร', "switchTab('cards')")}
+        ${quickStat('fa-calendar-check','text-theme-primary','bg-orange-50', totalInst, 'รายการผ่อน', "switchTab('installments')")}
+        ${quickStat('fa-arrow-trend-up','text-blue-500','bg-blue-50', totalStocks, 'หลักทรัพย์', "switchTab('invest')")}
+      </div>
 
-    function showSaveBanner() {
-      const banner = document.getElementById('save-banner');
-      banner.classList.add('visible');
-      if (saveTimeout) clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(() => { banner.classList.remove('visible'); }, 2000);
-    }
+      ${state.lastBackup ? `<p class="text-center text-[9px] font-bold text-slate-300 uppercase tracking-widest pt-1">${state.lastBackup}</p>` : ''}
 
-    window.clearAllData = () => {
-      if (confirm("⚠️ คำเตือน: คุณเบนซ์แน่ใจนะคะว่าจะล้างข้อมูลทั้งหมด? ข้อมูลบัตร, ผ่อน, และการลงทุนจะหายไปหมดเลยนะคะ! (แนะนำให้ Backup ไว้ก่อนค่ะ)")) {
-        if (confirm("ยืนยันการลบข้อมูลทั้งหมดจริงๆ นะคะ? (ลบแล้วกู้คืนไม่ได้นอกจากจะโหลดไฟล์ Backup ค่ะ)")) {
-          state.cards = []; state.installments = []; state.gold = []; state.stocks = []; state.marketPrices = {}; state.lastBackup = '';
-          forceSave(); closeModal(); renderViewport();
-          alert("เก๋เคลียร์ข้อมูลทั้งหมดให้เรียบร้อยแล้วค่ะ เริ่มต้นใหม่ได้เลย! ✨");
-        }
-      }
-    };
+    </div>`;
+}
 
-    function arrayToCSV(arr) {
-      if (arr.length === 0) return '';
-      const keys = Object.keys(arr[0]);
-      const header = keys.join(',');
-      const rows = arr.map(obj => keys.map(k => `"${(obj[k] || '').toString().replace(/"/g, '""')}"`).join(','));
-      return [header, ...rows].join('\n');
-    }
+function quickStat(icon, tc, bg, val, label, onclick) {
+  return `
+    <button onclick="${onclick}" class="item-card p-4 text-center hover:bg-slate-50 transition-colors active:scale-95">
+      <div class="w-10 h-10 ${bg} ${tc} rounded-2xl flex items-center justify-center mx-auto mb-2">
+        <i class="fa-solid ${icon} text-base"></i>
+      </div>
+      <p class="text-xl font-black text-slate-800">${val}</p>
+      <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-tight mt-0.5">${label}</p>
+    </button>`;
+}
 
-    window.exportData = async () => {
-      if (typeof JSZip === 'undefined') return alert('ระบบกำลังโหลดตัวบีบอัดไฟล์ กรุณารอสักครู่ค่ะ');
-      const zip = new JSZip();
-      const rawData = { cards: state.cards, installments: state.installments, gold: state.gold, stocks: state.stocks, marketPrices: state.marketPrices, theme: state.theme, settings: state.settings, lastBackup: state.lastBackup };
-      zip.file("meetang_system_data.json", JSON.stringify(rawData, null, 2));
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'สวัสดีตอนเช้า ☀️';
+  if (h < 18) return 'สวัสดีตอนบ่าย 🌤️';
+  return 'สวัสดีตอนเย็น 🌙';
+}
 
-      const csvFolder = zip.folder("excel_files");
-      if (state.cards.length > 0) csvFolder.file("cards.csv", "\ufeff" + arrayToCSV(state.cards));
-      if (state.installments.length > 0) csvFolder.file("installments.csv", "\ufeff" + arrayToCSV(state.installments));
-      if (state.gold.length > 0) csvFolder.file("gold.csv", "\ufeff" + arrayToCSV(state.gold));
-      if (state.stocks.length > 0) csvFolder.file("stocks.csv", "\ufeff" + arrayToCSV(state.stocks));
+/* ═══════════════════════════════════════════
+   PAGE: CARDS
+═══════════════════════════════════════════ */
+function renderCards(container) {
+  const totalLimit = state.cards.reduce((s, c) => s + c.limit, 0);
+  const totalUsed  = state.cards.reduce((s, c) => {
+    return s + state.installments.filter(i => i.cardId === c.id).reduce((ss, i) => ss + i.amount, 0);
+  }, 0);
 
-      const content = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(content);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `meetang_backup_${new Date().toISOString().slice(0, 10)}.zip`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  container.innerHTML = `
+    <div class="space-y-4 fade-in">
+      <div class="section-head">
+        <h2>บัตรเครดิต</h2>
+        <button onclick="openCardForm()" class="fab bg-theme-primary text-white">
+          <i class="fa-solid fa-plus"></i>
+        </button>
+      </div>
 
-      state.lastBackup = 'เซฟ Zip เมื่อ ' + new Date().toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-      forceSave(); if (state.tab === 'home') renderViewport();
-    };
+      ${state.cards.length > 0 ? `
+      <!-- summary strip -->
+      <div class="grid grid-cols-2 gap-3 mb-2">
+        <div class="item-card p-4 text-center">
+          <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">วงเงินรวม</p>
+          <p class="text-lg font-black text-slate-800">฿${toCurr(totalLimit)}</p>
+        </div>
+        <div class="item-card p-4 text-center">
+          <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">ใช้ไปรวม/เดือน</p>
+          <p class="text-lg font-black text-theme-primary">฿${toCurr(totalUsed)}</p>
+        </div>
+      </div>
+      ` : ''}
 
-    window.importData = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const ext = file.name.split('.').pop().toLowerCase();
-
-      if (ext === 'zip') {
-        if (typeof JSZip === 'undefined') return alert('โหลดไลบรารีไม่สำเร็จ กรุณาต่อเน็ตแล้วลองใหม่ค่ะ');
-        const reader = new FileReader();
-        reader.onload = async (evt) => {
-          try {
-            const zip = await JSZip.loadAsync(evt.target.result);
-            if (!zip.file("meetang_system_data.json")) return alert("ไม่พบไฟล์ JSON ค่ะ");
-            const jsonStr = await zip.file("meetang_system_data.json").async("string");
-            restoreFromJson(jsonStr);
-          } catch (err) { alert("เกิดข้อผิดพลาดในการแตกไฟล์ Zip ค่ะ"); }
-        };
-        reader.readAsArrayBuffer(file);
-      } else {
-        const reader = new FileReader();
-        reader.onload = (evt) => { restoreFromJson(evt.target.result); };
-        reader.readAsText(file);
-      }
-      e.target.value = '';
-    };
-
-    function restoreFromJson(jsonString) {
-      try {
-        const parsed = JSON.parse(jsonString);
-        if (parsed.cards !== undefined) {
-          state.cards = parsed.cards || []; state.installments = parsed.installments || [];
-          state.gold = parsed.gold || []; state.stocks = parsed.stocks || []; state.marketPrices = parsed.marketPrices || {};
-          if (parsed.theme) state.theme = parsed.theme;
-          if (parsed.settings !== undefined) { state.settings = parsed.settings; if (!state.settings.usdRate) state.settings.usdRate = 36.5; }
-          state.lastBackup = 'โหลดเมื่อ ' + new Date().toLocaleString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-          forceSave(); applyTheme(state.theme.color); renderViewport(); closeModal();
-          alert("กู้คืนข้อมูลสำเร็จแล้วค่ะ!");
-        } else { alert("ไฟล์ไม่ถูกต้อง หรือข้อมูลไม่ครบถ้วนค่ะ"); }
-      } catch (err) { alert("เกิดข้อผิดพลาดในการอ่านข้อมูลค่ะ"); }
-    }
-
-    function fetchWeather() {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(async (pos) => {
-          const { latitude, longitude } = pos.coords;
-          try {
-            const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&air_quality=pm2_5`);
-            const data = await res.json();
-            const pmRes = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&current=pm2_5`);
-            const pmData = await pmRes.json();
-
-            state.weather = {
-              temp: data.current.temperature_2m.toFixed(1),
-              condition: getWeatherCodeDesc(data.current.weather_code),
-              pm25: pmData.current.pm2_5.toFixed(0),
-              location: 'พิกัดปัจจุบันของคุณ'
-            };
-            if (state.tab === 'home') renderViewport();
-          } catch (e) { console.error('Weather error', e); }
-        }, (err) => {
-          console.warn("Location denied");
-          state.weather.condition = "ระบุพิกัดไม่ได้";
-          if (state.tab === 'home') renderViewport();
-        });
-      }
-    }
-
-    function getWeatherCodeDesc(code) { return code <= 3 ? 'มีเมฆบางส่วน' : 'อากาศเปลี่ยนแปลง'; }
-    function getPMColor(val) { return 'text-emerald-400'; }
-
-    function applyTheme(c) { document.documentElement.style.setProperty('--primary', c); state.theme.color = c; }
-
-    window.switchTab = (t) => {
-      state.tab = t;
-      ['home', 'cards', 'installments', 'invest', 'summary'].forEach(item => {
-        const b = document.getElementById(`tab-${item}`);
-        if (b) { if (t === item) { b.classList.add('tab-active'); b.classList.remove('tab-inactive'); } else { b.classList.remove('tab-active'); b.classList.add('tab-inactive'); } }
-      });
-      renderViewport();
-    };
-
-    window.switchInvestSubTab = (subTab) => { state.investSubTab = subTab; renderViewport(); };
-
-    function renderViewport() {
-      const container = document.getElementById('view-container');
-      if (!container) return;
-      updateNotifs(); container.innerHTML = '';
-      if (state.tab === 'home') renderHome(container);
-      else if (state.tab === 'cards') renderCards(container);
-      else if (state.tab === 'installments') renderInstallments(container);
-      else if (state.tab === 'invest') renderInvest(container);
-      else if (state.tab === 'summary') renderSummary(container);
-    }
-
-    function renderHome(container) {
-      const today = new Date(); const thisYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-      const currentMonthTotal = state.installments.reduce((sum, item) => {
-        const start = item.startMonth; const end = shiftMonthStr(item.startMonth, item.dur - 1);
-        if (thisYm >= start && thisYm <= end) return sum + item.amount; return sum;
-      }, 0);
-
-      let alertCardHtml = '';
-      if (state.settings.enableNotif) {
-        const day = today.getDate();
-        const urgentCards = state.cards.filter(c => { const diff = c.date - day; return diff >= 0 && diff <= 3; });
-        const alertText = urgentCards.length > 0 ? `บัตร ${urgentCards[0].name}` : 'ยังไม่มีดิวใกล้ชำระ';
-        const alertColor = urgentCards.length > 0 ? 'rose' : 'emerald';
-        alertCardHtml = `
-            <div class="bg-${alertColor}-50 p-4 rounded-3xl border border-${alertColor}-100/50 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center text-${alertColor}-500 shadow-sm"><i class="fa-solid ${urgentCards.length > 0 ? 'fa-clock' : 'fa-check-circle'} text-lg"></i></div>
-                    <div>
-                        <p class="text-[9px] font-bold text-${alertColor}-600/80 uppercase tracking-widest mb-0.5">บัตรใกล้ตัดรอบ</p>
-                        <p class="text-sm font-bold text-slate-800">${alertText}</p>
-                    </div>
-                </div>
-            </div>`;
-      } else {
-        alertCardHtml = `<div class="bg-slate-50 p-4 rounded-3xl border border-slate-100/50 flex items-center gap-3"><div class="w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-400 shadow-sm"><i class="fa-solid fa-bell-slash text-lg"></i></div><div><p class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">แจ้งเตือน</p><p class="text-sm font-bold text-slate-400">ปิดการเตือน</p></div></div>`;
-      }
-
-      container.innerHTML = `
-                <div class="space-y-5 fade-in">
-                    <div class="px-2 pt-2">
-                        <h2 class="text-2xl font-black text-slate-800 tracking-tight">มีตัง ยินดีต้อนรับผู้ใช้งาน ค่ะ ✨</h2>
-                        <p class="text-xs font-bold text-slate-500 mt-1">พร้อมจัดการการเงินของวันนี้หรือยังคะ?</p>
-                    </div>
-
-                    <div class="weather-gradient p-6 rounded-3xl text-white shadow-xl shadow-blue-200/50 relative overflow-hidden">
-                        <div class="flex justify-between items-start mb-6 relative z-10">
-                            <div>
-                                <p class="text-[10px] font-bold text-blue-200 flex items-center gap-1 uppercase tracking-widest"><i class="fa-solid fa-location-dot"></i> ${state.weather.location}</p>
-                                <h3 class="text-5xl font-black mt-2 tracking-tighter">${state.weather.temp}°<span class="text-2xl text-blue-200">C</span></h3>
-                            </div>
-                            <i class="fa-solid fa-sun text-4xl text-yellow-300 drop-shadow-md animate-[spin_10s_linear_infinite]"></i>
-                        </div>
-                        <div class="flex justify-between items-center bg-white/20 p-3.5 rounded-2xl backdrop-blur-md relative z-10 border border-white/10">
-                            <div class="flex items-center gap-2.5">
-                                <i class="fa-solid fa-wind text-blue-100"></i>
-                                <span class="text-xs font-bold text-blue-50">ฝุ่น PM 2.5: <span class="text-sm font-black ${getPMColor(state.weather.pm25)} bg-slate-900/40 px-2 py-0.5 rounded-lg ml-1">${state.weather.pm25}</span></span>
-                            </div>
-                            <span class="text-[10px] font-bold text-white uppercase tracking-widest">${state.weather.condition}</span>
-                        </div>
-                        <i class="fa-solid fa-cloud absolute -bottom-4 -right-4 text-7xl text-white/10"></i>
-                    </div>
-
-                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center">
-                        <div class="flex items-center gap-4">
-                            <div class="w-12 h-12 bg-theme-primary/10 rounded-2xl flex items-center justify-center text-theme-primary"><i class="fa-solid fa-wallet text-xl"></i></div>
-                            <div><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">ยอดต้องจ่ายเดือนนี้</p><p class="text-2xl font-black text-slate-800">${toCurr(currentMonthTotal, 'THB')}</p></div>
-                        </div>
-                        <button onclick="switchTab('installments')" class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:text-theme-primary hover:bg-theme-primary/10 transition-colors"><i class="fa-solid fa-chevron-right text-xs"></i></button>
-                    </div>
-
-                    ${alertCardHtml}
-                </div>
-            `;
-    }
-
-    function renderCards(container) {
-      container.innerHTML = `
-          <div class="fade-in space-y-4">
-              <div class="flex justify-between items-center px-1 mb-2">
-                  <h2 class="text-lg font-black text-slate-800">บัตรเครดิต</h2>
-                  <button onclick="openCardForm()" class="bg-theme-primary text-white w-8 h-8 rounded-full flex items-center justify-center shadow-lg shadow-orange-200/50 active:scale-90 transition-transform"><i class="fa-solid fa-plus text-sm"></i></button>
-              </div>
-              ${state.cards.length === 0 ? `<div class="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-200"><i class="fa-solid fa-credit-card text-4xl text-slate-200 mb-3"></i><p class="text-xs font-bold text-slate-400 uppercase tracking-widest">เพิ่มบัตรใบแรกเพื่อเริ่มใช้งานค่ะ</p></div>`
-          : state.cards.map(c => {
-            const used = state.installments.filter(i => i.cardId === c.id).reduce((sum, i) => sum + i.amount, 0);
-            const pct = Math.min((used / c.limit) * 100, 100);
+      ${state.cards.length === 0
+        ? `<div class="empty-state"><i class="fa-solid fa-credit-card"></i><p>เพิ่มบัตรใบแรกเพื่อเริ่มใช้งานค่ะ</p></div>`
+        : state.cards.map(c => {
+            const used = state.installments.filter(i => i.cardId === c.id).reduce((s, i) => s + i.amount, 0);
+            const pct  = Math.min((used / c.limit) * 100, 100);
+            const today = new Date().getDate();
+            const diff = c.date - today;
+            const dueBadge = diff === 0 ? `<span class="text-[9px] font-bold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full">ตัดรอบวันนี้!</span>`
+              : diff > 0 && diff <= 3 ? `<span class="text-[9px] font-bold text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full">อีก ${diff} วัน</span>`
+              : '';
             return `
-                      <div class="card-gradient p-6 rounded-[2rem] text-white shadow-xl relative overflow-hidden group mb-4">
-                          <div class="flex justify-between items-start relative z-10 mb-6">
-                              <div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-sm"><i class="fa-solid fa-microchip text-xs text-white/70"></i></div><h3 class="font-black text-xl tracking-wide">${c.name}</h3></div>
-                              <div class="flex gap-2">
-                                  <button onclick="editCard('${c.id}')" class="w-7 h-7 bg-white/10 rounded-full flex items-center justify-center text-[10px] hover:bg-theme-primary transition-colors"><i class="fa-solid fa-pen"></i></button>
-                                  <button onclick="delCard('${c.id}')" class="w-7 h-7 bg-white/10 rounded-full flex items-center justify-center text-[10px] text-white/50 hover:bg-red-500 hover:text-white transition-colors"><i class="fa-solid fa-trash"></i></button>
-                              </div>
-                          </div>
-                          <div class="relative z-10 space-y-3">
-                              <div><div class="flex justify-between text-[9px] font-bold text-white/50 uppercase tracking-widest mb-1.5"><span>ใช้ไป ${toCurr(used, 'THB')}</span><span>${pct.toFixed(0)}%</span></div><div class="w-full h-1.5 bg-white/10 rounded-full overflow-hidden"><div class="h-full bg-theme-primary transition-all duration-1000" style="width: ${pct}%"></div></div></div>
-                              <div class="flex justify-between items-end pt-2"><div><p class="text-[8px] text-white/40 font-bold uppercase tracking-widest mb-0.5">วงเงินรวม</p><p class="text-lg font-bold">${toCurr(c.limit, 'THB')}</p></div><div class="text-right"><p class="text-[8px] text-white/40 font-bold uppercase tracking-widest mb-0.5">วันตัดรอบ</p><p class="text-2xl font-black text-theme-primary leading-none">${c.date}</p></div></div>
-                          </div>
-                          <i class="fa-brands fa-cc-visa absolute -bottom-6 -right-6 text-8xl text-white/5 opacity-50"></i>
-                      </div>`;
-          }).join('')}
-          </div>
-      `;
-    }
-
-    function renderInstallments(container) {
-      const today = new Date(); const thisYm = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-      const currentMonthTotal = state.installments.reduce((sum, item) => {
-        const start = item.startMonth; const end = shiftMonthStr(item.startMonth, item.dur - 1);
-        if (thisYm >= start && thisYm <= end) return sum + item.amount; return sum;
-      }, 0);
-      container.innerHTML = `
-          <div class="fade-in space-y-4">
-              <div class="flex justify-between items-center px-1 mb-2">
-                  <h2 class="text-lg font-black text-slate-800">รายการผ่อนชำระ</h2>
-                  <button onclick="openInstForm()" class="bg-theme-primary text-white w-8 h-8 rounded-full flex items-center justify-center shadow-lg shadow-orange-200/50 active:scale-90 transition-transform"><i class="fa-solid fa-plus text-sm"></i></button>
-              </div>
-              <div class="bg-theme-primary/10 p-5 rounded-[2rem] border border-theme-primary/20 flex justify-between items-center shadow-sm">
-                  <div><p class="text-[10px] font-bold text-theme-primary uppercase tracking-widest mb-0.5"><i class="fa-solid fa-calendar-day mr-1.5"></i>ยอดผ่อนเดือนปัจจุบัน</p><p class="text-3xl font-black text-theme-primary">${toCurr(currentMonthTotal, 'THB')}</p></div>
-                  <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center text-theme-primary shadow-sm"><i class="fa-solid fa-receipt text-xl"></i></div>
-              </div>
-              ${state.installments.length === 0 ? `<div class="text-center py-10 bg-white rounded-3xl border border-slate-100"><i class="fa-solid fa-cart-shopping text-4xl text-slate-200 mb-3"></i><p class="text-xs font-bold text-slate-400 uppercase tracking-widest">ยังไม่มีรายการผ่อนค่ะ</p></div>`
-          : `<div class="space-y-3">
-                  ${state.installments.map(i => {
-            const card = state.cards.find(c => c.id === i.cardId);
-            return `
-                          <div class="bg-white p-4.5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center group">
-                              <div class="flex items-center gap-4"><div class="w-11 h-11 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 shrink-0"><i class="fa-solid fa-box-open text-sm"></i></div><div><h4 class="font-black text-slate-800 text-sm leading-tight">${i.name}</h4><p class="text-[9px] font-bold text-slate-400 mt-1 tracking-wider uppercase"><i class="fa-regular fa-credit-card mr-1"></i>${card?.name || '-'} | เริ่ม ${i.startMonth}</p></div></div>
-                              <div class="text-right"><p class="text-sm font-black text-theme-primary">${toCurr(i.amount, 'THB')}</p><p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">${i.dur} งวด</p><div class="flex justify-end gap-3 mt-1.5"><button onclick="editInst('${i.id}')" class="text-[9px] font-bold text-slate-400 hover:text-theme-primary uppercase tracking-widest transition-colors">แก้ไข</button><button onclick="delInst('${i.id}')" class="text-[9px] font-bold text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors">ลบ</button></div></div>
-                          </div>`;
-          }).join('')}
-                 </div>`}
-          </div>
-      `;
-    }
-
-    function renderInvest(container) {
-      const isGold = state.investSubTab === 'gold';
-      const usdRate = state.settings.usdRate || 36.5;
-
-      let html = `
-          <div class="fade-in space-y-4">
-              <div class="flex justify-between items-center px-1 mb-2">
-                  <h2 class="text-lg font-black text-slate-800">พอร์ตลงทุน</h2>
-                  <button onclick="${isGold ? 'openGoldForm()' : 'openStockForm()'}" class="${isGold ? 'gold-gradient shadow-yellow-200/50' : 'bg-blue-500 shadow-blue-200/50'} text-white w-8 h-8 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform"><i class="fa-solid fa-plus text-sm"></i></button>
-              </div>
-              <div class="flex bg-slate-100 p-1.5 rounded-2xl mb-4">
-                  <button onclick="switchInvestSubTab('stocks')" class="flex-1 py-2 text-xs font-bold rounded-xl transition-all ${!isGold ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400'}">พอร์ตหุ้น/กองทุน</button>
-                  <button onclick="switchInvestSubTab('gold')" class="flex-1 py-2 text-xs font-bold rounded-xl transition-all ${isGold ? 'bg-white shadow-sm text-yellow-600' : 'text-slate-400'}">พอร์ตทองคำ</button>
-              </div>
-      `;
-
-      if (isGold) {
-        let totalWeight = 0; let totalInvestment = 0;
-        state.gold.forEach(g => {
-          if (g.type === 'buy') { totalWeight += g.weight; totalInvestment += (g.weight * g.price); }
-          else if (g.type === 'sell') { totalWeight -= g.weight; totalInvestment -= (g.weight * g.price); }
-        });
-
-        const sortedGold = [...state.gold].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-        html += `
-              <div class="gold-gradient p-6 rounded-[2rem] text-white shadow-xl relative overflow-hidden fade-in">
-                  <div class="relative z-10 flex justify-between items-center mb-4"><div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm"><i class="fa-solid fa-coins text-lg"></i></div><span class="text-[10px] font-bold uppercase tracking-widest bg-white/20 px-3 py-1 rounded-full">สินทรัพย์มั่นคง</span></div>
-                  <div class="relative z-10">
-                      <p class="text-[10px] font-bold text-white/70 uppercase tracking-widest mb-1">น้ำหนักทองคำรวม</p>
-                      <h3 class="text-4xl font-black tracking-tight">${totalWeight.toFixed(2)} <span class="text-lg font-bold text-yellow-100">บาท</span></h3>
-                      <div class="mt-4 pt-4 border-t border-white/20 flex justify-between items-end">
-                          <div><p class="text-[9px] font-bold text-white/70 uppercase tracking-widest mb-0.5">เงินลงทุนสุทธิ</p><p class="text-lg font-bold">฿${toCurr(totalInvestment, '')}</p></div>
-                          <div class="text-right"><p class="text-[9px] font-bold text-white/70 uppercase tracking-widest mb-0.5">ต้นทุนเฉลี่ย/บาท</p><p class="text-sm font-bold text-yellow-100">${totalWeight > 0 ? '฿' + toCurr(totalInvestment / totalWeight, '') : '฿0'}</p></div>
-                      </div>
-                  </div>
-                  <i class="fa-solid fa-vault absolute -bottom-6 -right-4 text-8xl text-white/10 opacity-50"></i>
-              </div>
-              <h3 class="text-sm font-black text-slate-800 px-1 mt-6">ประวัติทำรายการทองคำ</h3>
-              ${sortedGold.length === 0 ? `<div class="text-center py-10 bg-white rounded-3xl border border-slate-100"><i class="fa-solid fa-piggy-bank text-4xl text-slate-200 mb-3"></i><p class="text-xs font-bold text-slate-400 uppercase tracking-widest">ยังไม่มีรายการสะสมทองคำค่ะ</p></div>`
-            : `<div class="space-y-3">
-                  ${sortedGold.map(g => `
-                      <div class="bg-white p-4.5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center group">
-                          <div class="flex items-center gap-4">
-                              <div class="w-11 h-11 ${g.type === 'buy' ? 'bg-emerald-50 text-emerald-500' : 'bg-rose-50 text-rose-500'} rounded-2xl flex items-center justify-center shrink-0"><i class="fa-solid ${g.type === 'buy' ? 'fa-arrow-down' : 'fa-arrow-up'} text-sm"></i></div>
-                              <div><h4 class="font-black text-slate-800 text-sm leading-tight">${g.type === 'buy' ? 'ซื้อทองคำ' : 'ขายทองคำ'}</h4><p class="text-[9px] font-bold text-slate-400 mt-1 tracking-wider uppercase"><i class="fa-regular fa-calendar mr-1"></i>${g.date}</p></div>
-                          </div>
-                          <div class="text-right">
-                              <p class="text-sm font-black ${g.type === 'buy' ? 'text-emerald-500' : 'text-rose-500'}">${g.type === 'buy' ? '+' : '-'}${g.weight} บาท</p>
-                              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">@ ฿${toCurr(g.price, '')}/บาท</p>
-                              <div class="flex justify-end gap-3 mt-1.5"><button onclick="editGold('${g.id}')" class="text-[9px] font-bold text-slate-400 hover:text-theme-primary uppercase tracking-widest transition-colors">แก้ไข</button><button onclick="delGold('${g.id}')" class="text-[9px] font-bold text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors">ลบ</button></div>
-                          </div>
-                      </div>
-                  `).join('')}
-                 </div>`}
-        `;
-      } else {
-        // --- STOCKS: DIME STYLE UPGRADE ---
-        let totalInTHB = 0;
-        let totalOutTHB = 0;
-        let currentShares = {};
-        let currentInvested = {};
-        let currentCurrency = {};
-
-        state.stocks.forEach(s => {
-          const rate = (s.currency === 'USD') ? usdRate : 1;
-          const valueTHB = (s.type === 'dividend' ? s.price : (s.shares * s.price)) * rate;
-
-          if (!currentShares[s.symbol]) { currentShares[s.symbol] = 0; currentInvested[s.symbol] = 0; currentCurrency[s.symbol] = s.currency || 'THB'; }
-
-          if (s.type === 'buy') {
-            totalInTHB += valueTHB;
-            currentShares[s.symbol] += s.shares;
-            currentInvested[s.symbol] += valueTHB;
-          } else if (s.type === 'sell') {
-            totalOutTHB += valueTHB;
-            if (currentShares[s.symbol] > 0) {
-              const proportion = s.shares / currentShares[s.symbol];
-              currentShares[s.symbol] -= s.shares;
-              currentInvested[s.symbol] -= (currentInvested[s.symbol] * proportion);
-            }
-          } else if (s.type === 'dividend') {
-            totalOutTHB += valueTHB;
-          }
-        });
-
-        let totalCurrentValueTHB = 0;
-        let activeStocksHTML = '';
-
-        Object.keys(currentShares).forEach(sym => {
-          if (currentShares[sym] > 0) {
-            const cCurr = currentCurrency[sym];
-            const rate = (cCurr === 'USD') ? usdRate : 1;
-            const avgCostTHB = currentInvested[sym] / currentShares[sym];
-            const avgCostOrig = avgCostTHB / rate;
-
-            // Get market price from user settings
-            let mktPriceOrig = state.marketPrices[sym];
-            let isMktPriceSet = true;
-            if (!mktPriceOrig) {
-              mktPriceOrig = avgCostOrig; // Default to avg cost
-              isMktPriceSet = false;
-            }
-
-            const currentValTHB = currentShares[sym] * mktPriceOrig * rate;
-            totalCurrentValueTHB += currentValTHB;
-            const currSym = cCurr === 'USD' ? '$' : '฿';
-
-            activeStocksHTML += `
-                    <div class="bg-white/10 rounded-xl p-4 flex justify-between items-center hover:bg-white/20 transition-colors cursor-pointer" onclick="openMarketPriceForm('${sym}', '${cCurr}')">
-                        <div class="flex flex-col">
-                            <span class="text-[16px] font-bold text-white">${sym}</span>
-                            ${!isMktPriceSet ? `<span class="text-[9px] text-yellow-300"><i class="fa-solid fa-pen-to-square mr-1"></i>อัปเดตราคา</span>` : `<span class="text-[9px] text-emerald-300">อัปเดตแล้ว</span>`}
-                        </div>
-                        <div class="text-right flex flex-col gap-1">
-                            <span class="text-[13px] font-semibold text-white">${currentShares[sym].toFixed(6)} หุ้น</span>
-                            <span class="text-[11px] text-white/80">ทุนเฉลี่ย ${currSym}${toCurr(avgCostOrig, '')} (฿${toCurr(avgCostTHB, '')})</span>
-                        </div>
-                    </div>
-                `;
-          }
-        });
-
-        let profitLossTHB = (totalCurrentValueTHB + totalOutTHB) - totalInTHB;
-        let profitLossPercent = totalInTHB > 0 ? (profitLossTHB / totalInTHB) * 100 : 0;
-        let signText = profitLossTHB >= 0 ? '+' : '';
-        let signColor = profitLossTHB >= 0 ? 'text-emerald-300' : 'text-rose-300';
-
-        const sortedStocks = [...state.stocks].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-        html += `
-              <div class="dime-gradient rounded-[24px] p-5 text-white shadow-[0_10px_30px_rgba(0,119,214,0.3)] fade-in mb-6 relative overflow-hidden">
-                  <div class="relative z-10 flex justify-between items-start mb-5">
-                      <div class="flex flex-col">
-                          <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center text-lg mb-3 shadow-inner">📈</div>
-                          <div class="text-[12px] font-medium text-white/90 mb-1">มูลค่าสินทรัพย์รวม (THB)</div>
-                          <div class="text-[32px] font-extrabold tracking-tight mb-1.5 leading-none">฿${toCurr(totalCurrentValueTHB, '')}</div>
-                          <div class="text-[12px] font-semibold ${signColor} bg-slate-900/20 w-fit px-2 py-1 rounded-lg">
-                              ผลตอบแทน ${signText}฿${toCurr(Math.abs(profitLossTHB), '')} / ${signText}${profitLossPercent.toFixed(2)}%
-                          </div>
-                      </div>
-                      <div class="bg-white/20 px-3 py-1.5 rounded-full text-[10px] font-bold backdrop-blur-sm shadow-sm">พอร์ตลงทุนรวม</div>
-                  </div>
-                  
-                  <div class="relative z-10 text-[11px] font-bold text-white/90 mb-3 pb-2 border-b border-white/20">สถานะหุ้นที่ถือครองปัจจุบัน (คลิกเพื่อใส่ราคาตลาด)</div>
-                  <div class="relative z-10 flex flex-col gap-2.5">
-                      ${activeStocksHTML || '<p class="text-xs text-white/50 py-2 text-center">ยังไม่มีหุ้นในพอร์ต</p>'}
-                  </div>
-                  <i class="fa-solid fa-chart-line absolute -bottom-6 -right-6 text-8xl text-white/10 opacity-40"></i>
-              </div>
-
-              <h3 class="text-sm font-black text-slate-800 px-1 mt-6">ประวัติหุ้น/กองทุน/ปันผล</h3>
-              ${sortedStocks.length === 0 ? `
-                  <div class="text-center py-10 bg-white rounded-3xl border border-slate-100"><i class="fa-solid fa-seedling text-4xl text-slate-200 mb-3"></i><p class="text-xs font-bold text-slate-400 uppercase tracking-widest">ยังไม่มีรายการลงทุนค่ะ</p></div>
-              ` : `
-                  <div class="space-y-3">
-                      ${sortedStocks.map(s => {
-          const curr = s.currency || 'THB';
-          const currSym = curr === 'USD' ? '$' : '฿';
-          let icon, bgColor, textColor, titleText, typeText, detailText, amountText;
-
-          if (s.type === 'buy') {
-            icon = 'fa-cart-plus'; bgColor = 'bg-blue-50'; textColor = 'text-blue-500'; titleText = s.symbol; typeText = 'ซื้อ'; detailText = `${s.shares} หุ้น @ ${currSym}${toCurr(s.price, '')}`; amountText = `${currSym}${toCurr(s.shares * s.price, '')}`;
-          } else if (s.type === 'sell') {
-            icon = 'fa-hand-holding-dollar'; bgColor = 'bg-orange-50'; textColor = 'text-orange-500'; titleText = s.symbol; typeText = 'ขาย'; detailText = `${s.shares} หุ้น @ ${currSym}${toCurr(s.price, '')}`; amountText = `${currSym}${toCurr(s.shares * s.price, '')}`;
-          } else if (s.type === 'dividend') {
-            icon = 'fa-sack-dollar'; bgColor = 'bg-purple-50'; textColor = 'text-purple-500'; titleText = s.symbol; typeText = 'เงินปันผล'; detailText = 'โอนเข้าพอร์ต (เงินสด)'; amountText = `+${currSym}${toCurr(s.price, '')}`;
-          }
-
-          return `
-                          <div class="bg-white p-4.5 rounded-3xl border border-slate-100 shadow-sm flex justify-between items-center group">
-                              <div class="flex items-center gap-4">
-                                  <div class="w-11 h-11 ${bgColor} ${textColor} rounded-2xl flex items-center justify-center shrink-0"><i class="fa-solid ${icon} text-sm"></i></div>
-                                  <div><h4 class="font-black text-slate-800 text-sm leading-tight">${titleText}</h4><p class="text-[9px] font-bold text-slate-400 mt-1 tracking-wider uppercase"><span class="${textColor}">${typeText}</span> | ${s.date}</p></div>
-                              </div>
-                              <div class="text-right">
-                                  <p class="text-sm font-black text-slate-800">${amountText}</p>
-                                  <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">${detailText}</p>
-                                  <div class="flex justify-end gap-3 mt-1.5"><button onclick="editStock('${s.id}')" class="text-[9px] font-bold text-slate-400 hover:text-theme-primary uppercase tracking-widest transition-colors">แก้ไข</button><button onclick="delStock('${s.id}')" class="text-[9px] font-bold text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors">ลบรายการ</button></div>
-                              </div>
-                          </div>`;
-        }).join('')}
-                  </div>
-              `}
-        `;
-      }
-      html += `</div>`;
-      container.innerHTML = html;
-    }
-
-    function renderSummary(container) {
-      let first = '9999-99'; let last = '0000-00';
-      if (state.installments.length > 0) {
-        state.installments.forEach(i => {
-          if (i.startMonth < first) first = i.startMonth;
-          const end = shiftMonthStr(i.startMonth, i.dur - 1);
-          if (end > last) last = end;
-        });
-      }
-      const stats = [];
-      if (first !== '9999-99') {
-        let cur = first;
-        while (cur <= last && stats.length < 36) {
-          let s = 0;
-          state.installments.forEach(i => { const e = shiftMonthStr(i.startMonth, i.dur - 1); if (cur >= i.startMonth && cur <= e) s += i.amount; });
-          stats.push({ ym: cur, total: s }); cur = shiftMonthStr(cur, 1);
-        }
-      }
-
-      container.innerHTML = `
-          <div class="fade-in space-y-5">
-              <h2 class="text-lg font-black text-slate-800 px-1">วิเคราะห์ภาพรวมการเงิน</h2>
-              ${stats.length > 0 ? `
-                  <div class="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100"><div class="h-56 w-full"><canvas id="sumChart"></canvas></div></div>
-                  <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
-                      <div class="p-4 bg-slate-50/50 flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100"><span>ประจำเดือน</span><span>ภาระจ่ายรวม (ผ่อน)</span></div>
-                      <div class="divide-y divide-slate-50">
-                          ${stats.map(s => `<div class="p-5 flex justify-between items-center hover:bg-slate-50 transition-colors"><div><p class="text-sm font-black text-slate-800">${formatThaiMonth(s.ym)}</p></div><p class="text-sm font-black text-theme-primary">${toCurr(s.total, 'THB')}</p></div>`).join('')}
-                      </div>
-                  </div>
-              ` : `<div class="text-center py-20 bg-white rounded-3xl border border-slate-100"><p class="text-xs font-bold text-slate-400 uppercase tracking-widest">ยังไม่มีข้อมูลภาระหนี้ให้วิเคราะห์ค่ะ</p></div>`}
-              <button onclick="askAIAdvisor()" class="w-full py-4 mt-2 ai-gradient text-white rounded-3xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 relative overflow-hidden active:scale-95 transition-transform">
-                  <div class="absolute inset-0 shimmer"></div><i class="fa-solid fa-wand-magic-sparkles relative z-10"></i><span class="relative z-10">ให้ AI เก๋ ช่วยวิเคราะห์การเงิน</span>
-              </button>
-          </div>
-      `;
-
-      if (stats.length > 0) {
-        setTimeout(() => {
-          const canvas = document.getElementById('sumChart'); if (!canvas) return;
-          const ctx = canvas.getContext('2d'); if (chartInstance) chartInstance.destroy();
-          const themeColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
-          chartInstance = new Chart(ctx, {
-            type: 'bar',
-            data: {
-              labels: stats.map(s => { const [y, m] = s.ym.split('-'); const mName = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'][parseInt(m) - 1]; return `${mName} ${y.slice(2)}`; }),
-              datasets: [{ data: stats.map(s => s.total), backgroundColor: themeColor, borderRadius: 6, barThickness: 16 }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: false, beginAtZero: true }, x: { grid: { display: false }, ticks: { font: { family: 'Kanit', size: 9 }, color: '#94a3b8' }, border: { display: false } } }, animation: { duration: 1000, easing: 'easeOutQuart' } }
-          });
-        }, 100);
-      }
-    }
-
-    window.askAIAdvisor = async () => { /* AI Logic */ }
-    window.closeModal = () => document.getElementById('modal-overlay').classList.add('hidden');
-    function openModal(t, h) { document.getElementById('modal-content').innerHTML = `<h3 class="text-xl font-black mb-5 text-slate-800">${t}</h3>${h}`; document.getElementById('modal-overlay').classList.remove('hidden'); }
-
-    // --- MARKET PRICE FORM (NEW) ---
-    window.openMarketPriceForm = (sym, currency) => {
-      const currPrice = state.marketPrices[sym] || '';
-      const currText = currency === 'USD' ? 'USD ($)' : 'THB (฿)';
-      openModal(`อัปเดตราคาตลาด - ${sym}`, `
-            <div class="space-y-4">
-                <div>
-                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ราคาตลาดปัจจุบัน (${currText})</label>
-                    <input id="in-mkt-pr" type="number" step="0.01" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${currPrice}" placeholder="ระบุราคาตลาดล่าสุด">
-                </div>
-                <div class="flex gap-2 mt-2">
-                    <button onclick="saveMarketPrice('${sym}')" class="flex-1 py-4 bg-blue-500 text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-blue-200 active:scale-95 transition-transform">บันทึกราคา</button>
-                    <button onclick="clearMarketPrice('${sym}')" class="w-20 py-4 bg-slate-200 text-slate-600 rounded-2xl font-bold text-sm active:scale-95 transition-transform"><i class="fa-solid fa-eraser"></i> ล้าง</button>
-                </div>
-            </div>
-        `);
-    }
-
-    window.saveMarketPrice = (sym) => {
-      const pr = document.getElementById('in-mkt-pr').value;
-      if (!state.marketPrices) state.marketPrices = {};
-      if (pr) { state.marketPrices[sym] = Number(pr); } else { delete state.marketPrices[sym]; }
-      forceSave(); closeModal(); renderViewport();
-    }
-
-    window.clearMarketPrice = (sym) => {
-      if (!state.marketPrices) return;
-      delete state.marketPrices[sym];
-      forceSave(); closeModal(); renderViewport();
-    }
-
-    // --- STOCK FORM (ADD & EDIT) ---
-    window.openStockForm = () => {
-      const todayStr = new Date().toISOString().split('T')[0];
-      openModal('บันทึกพอร์ตหุ้น/กองทุน', `
-          <div class="space-y-4">
-              <div class="flex gap-2 mb-2">
-                  <label class="flex-1 cursor-pointer"><input type="radio" name="stockType" value="buy" checked class="peer sr-only" onchange="toggleStockType()"><div class="text-center py-2.5 rounded-xl border-2 border-slate-100 peer-checked:border-blue-500 peer-checked:bg-blue-50 peer-checked:text-blue-600 font-bold text-[11px] text-slate-400 transition-all">ซื้อ</div></label>
-                  <label class="flex-1 cursor-pointer"><input type="radio" name="stockType" value="sell" class="peer sr-only" onchange="toggleStockType()"><div class="text-center py-2.5 rounded-xl border-2 border-slate-100 peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 font-bold text-[11px] text-slate-400 transition-all">ขาย</div></label>
-                  <label class="flex-1 cursor-pointer"><input type="radio" name="stockType" value="dividend" class="peer sr-only" onchange="toggleStockType()"><div class="text-center py-2.5 rounded-xl border-2 border-slate-100 peer-checked:border-purple-500 peer-checked:bg-purple-50 peer-checked:text-purple-600 font-bold text-[11px] text-slate-400 transition-all">ปันผล</div></label>
-              </div>
-              <div class="flex gap-2 mb-2">
-                  <label class="flex-1 cursor-pointer"><input type="radio" name="stockCurr" value="THB" checked class="peer sr-only" onchange="toggleStockType()"><div class="text-center py-2 rounded-xl border-2 border-slate-100 peer-checked:border-slate-800 peer-checked:bg-slate-800 peer-checked:text-white font-bold text-[10px] text-slate-400 transition-all">THB (฿)</div></label>
-                  <label class="flex-1 cursor-pointer"><input type="radio" name="stockCurr" value="USD" class="peer sr-only" onchange="toggleStockType()"><div class="text-center py-2 rounded-xl border-2 border-slate-100 peer-checked:border-slate-800 peer-checked:bg-slate-800 peer-checked:text-white font-bold text-[10px] text-slate-400 transition-all">USD ($)</div></label>
-              </div>
-              <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ชื่อหุ้น / กองทุน</label><input id="in-s-sym" type="text" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1 uppercase" placeholder="เช่น AAPL, PTT"></div>
-              <div class="flex gap-3" id="stock-shares-row">
-                  <div class="flex-1" id="box-shares"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">จำนวนหุ้น</label><input id="in-s-sh" type="number" step="0.0001" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="ระบุจำนวน"></div>
-                  <div class="flex-1"><label id="lbl-price" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ราคา/หุ้น (THB)</label><input id="in-s-pr" type="number" step="0.01" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="ต้นทุน/ราคาขาย"></div>
-              </div>
-              <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">วันที่ทำรายการ</label><input id="in-s-date" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${todayStr}"></div>
-              <button onclick="commitStock()" class="w-full py-4 stock-gradient text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-blue-200 mt-2 active:scale-95 transition-transform">บันทึกรายการ</button>
-          </div>
-      `);
-    };
-
-    window.toggleStockType = () => {
-      const type = document.querySelector('input[name="stockType"]:checked').value;
-      const curr = document.querySelector('input[name="stockCurr"]:checked').value;
-      const boxShares = document.getElementById('box-shares'); const lblPrice = document.getElementById('lbl-price');
-      const inShares = document.getElementById('in-s-sh'); const inPrice = document.getElementById('in-s-pr');
-      if (type === 'dividend') { boxShares.classList.add('hidden'); lblPrice.innerText = `ยอดเงินปันผลเข้าพอร์ต (${curr})`; inShares.value = 0; inPrice.placeholder = 'เช่น 1500'; }
-      else { boxShares.classList.remove('hidden'); lblPrice.innerText = `ราคา/หุ้น (${curr})`; inPrice.placeholder = 'ต้นทุน/ราคาขาย'; }
-    };
-
-    window.commitStock = () => {
-      const type = document.querySelector('input[name="stockType"]:checked').value, curr = document.querySelector('input[name="stockCurr"]:checked').value;
-      const sym = document.getElementById('in-s-sym').value.toUpperCase(), sh = document.getElementById('in-s-sh').value, pr = document.getElementById('in-s-pr').value, d = document.getElementById('in-s-date').value;
-      if (!sym || !pr || !d || (type !== 'dividend' && !sh)) return alert('กรอกข้อมูลให้ครบนะคะเพื่อน');
-      state.stocks.push({ id: Date.now().toString(), type: type, symbol: sym, shares: type === 'dividend' ? 0 : Number(sh), price: Number(pr), date: d, currency: curr });
-      closeModal(); renderViewport(); forceSave();
-    };
-
-    window.editStock = (id) => {
-      const s = state.stocks.find(x => x.id === id); if (!s) return;
-      const curr = s.currency || 'THB';
-      openModal('แก้ไขรายการหุ้น/กองทุน', `
-            <div class="space-y-4">
-                <div class="flex gap-2 mb-2">
-                    <label class="flex-1 cursor-pointer"><input type="radio" name="eStockType" value="buy" ${s.type === 'buy' ? 'checked' : ''} class="peer sr-only" onchange="toggleEStockType()"><div class="text-center py-2.5 rounded-xl border-2 border-slate-100 peer-checked:border-blue-500 peer-checked:bg-blue-50 peer-checked:text-blue-600 font-bold text-[11px] text-slate-400 transition-all">ซื้อ</div></label>
-                    <label class="flex-1 cursor-pointer"><input type="radio" name="eStockType" value="sell" ${s.type === 'sell' ? 'checked' : ''} class="peer sr-only" onchange="toggleEStockType()"><div class="text-center py-2.5 rounded-xl border-2 border-slate-100 peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 font-bold text-[11px] text-slate-400 transition-all">ขาย</div></label>
-                    <label class="flex-1 cursor-pointer"><input type="radio" name="eStockType" value="dividend" ${s.type === 'dividend' ? 'checked' : ''} class="peer sr-only" onchange="toggleEStockType()"><div class="text-center py-2.5 rounded-xl border-2 border-slate-100 peer-checked:border-purple-500 peer-checked:bg-purple-50 peer-checked:text-purple-600 font-bold text-[11px] text-slate-400 transition-all">ปันผล</div></label>
-                </div>
-                <div class="flex gap-2 mb-2">
-                    <label class="flex-1 cursor-pointer"><input type="radio" name="eStockCurr" value="THB" ${curr === 'THB' ? 'checked' : ''} class="peer sr-only" onchange="toggleEStockType()"><div class="text-center py-2 rounded-xl border-2 border-slate-100 peer-checked:border-slate-800 peer-checked:bg-slate-800 peer-checked:text-white font-bold text-[10px] text-slate-400 transition-all">THB (฿)</div></label>
-                    <label class="flex-1 cursor-pointer"><input type="radio" name="eStockCurr" value="USD" ${curr === 'USD' ? 'checked' : ''} class="peer sr-only" onchange="toggleEStockType()"><div class="text-center py-2 rounded-xl border-2 border-slate-100 peer-checked:border-slate-800 peer-checked:bg-slate-800 peer-checked:text-white font-bold text-[10px] text-slate-400 transition-all">USD ($)</div></label>
-                </div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ชื่อหุ้น / กองทุน</label><input id="e-s-sym" type="text" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1 uppercase" value="${s.symbol}"></div>
-                <div class="flex gap-3" id="e-stock-shares-row" style="${s.type === 'dividend' ? 'display:none;' : ''}">
-                    <div class="flex-1"><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">จำนวนหุ้น</label><input id="e-s-sh" type="number" step="0.0001" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${s.shares}"></div>
-                    <div class="flex-1"><label id="e-lbl-price" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ราคา/หุ้น (${curr})</label><input id="e-s-pr" type="number" step="0.01" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${s.type !== 'dividend' ? s.price : ''}"></div>
-                </div>
-                <div id="e-div-only-row" class="flex-1" style="${s.type !== 'dividend' ? 'display:none;' : ''}">
-                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1" id="e-lbl-div">ยอดเงินปันผล (${curr})</label><input id="e-s-div-pr" type="number" step="0.01" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${s.type === 'dividend' ? s.price : ''}">
-                </div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">วันที่ทำรายการ</label><input id="e-s-date" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${s.date}"></div>
-                <button onclick="updateStock('${id}')" class="w-full py-4 stock-gradient text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-blue-200 mt-2 active:scale-95 transition-transform">อัปเดตรายการ</button>
-            </div>
-        `);
-    };
-
-    window.toggleEStockType = () => {
-      const type = document.querySelector('input[name="eStockType"]:checked').value;
-      const curr = document.querySelector('input[name="eStockCurr"]:checked').value;
-      const rowShares = document.getElementById('e-stock-shares-row'); const rowDiv = document.getElementById('e-div-only-row');
-      const lblPrice = document.getElementById('e-lbl-price'); const lblDiv = document.getElementById('e-lbl-div');
-      if (type === 'dividend') { rowShares.style.display = 'none'; rowDiv.style.display = 'block'; lblDiv.innerText = `ยอดเงินปันผล (${curr})`; }
-      else { rowShares.style.display = 'flex'; rowDiv.style.display = 'none'; lblPrice.innerText = `ราคา/หุ้น (${curr})`; }
-    };
-
-    window.updateStock = (id) => {
-      const type = document.querySelector('input[name="eStockType"]:checked').value, curr = document.querySelector('input[name="eStockCurr"]:checked').value;
-      const sym = document.getElementById('e-s-sym').value.toUpperCase(), sh = document.getElementById('e-s-sh').value, d = document.getElementById('e-s-date').value;
-      const pr = type === 'dividend' ? document.getElementById('e-s-div-pr').value : document.getElementById('e-s-pr').value;
-      if (!sym || !pr || !d || (type !== 'dividend' && !sh)) return alert('กรอกข้อมูลให้ครบนะคะ');
-      const idx = state.stocks.findIndex(x => x.id === id);
-      if (idx !== -1) { state.stocks[idx] = { ...state.stocks[idx], type: type, symbol: sym, shares: type === 'dividend' ? 0 : Number(sh), price: Number(pr), date: d, currency: curr }; closeModal(); renderViewport(); forceSave(); }
-    };
-    window.delStock = (id) => { if (confirm("ต้องการลบรายการนี้ใช่ไหมคะ?")) { state.stocks = state.stocks.filter(x => x.id !== id); renderViewport(); forceSave(); } };
-
-    // --- GOLD FORM (ADD & EDIT) ---
-    window.openGoldForm = () => { /* ... */ }; // Kept functional below
-    window.commitGold = () => { /* ... */ };
-    window.editGold = (id) => { /* ... */ };
-    window.updateGold = (id) => { /* ... */ };
-    window.delGold = (id) => { /* ... */ };
-
-    // (Injecting Gold logic directly to keep copy-paste simple)
-    window.openGoldForm = () => {
-      const todayStr = new Date().toISOString().split('T')[0];
-      openModal('บันทึกการลงทุนทองคำ', `
-          <div class="space-y-4">
-              <div class="flex gap-2 mb-2">
-                  <label class="flex-1 cursor-pointer"><input type="radio" name="goldType" value="buy" checked class="peer sr-only"><div class="text-center py-3 rounded-2xl border-2 border-slate-100 peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-600 font-bold text-sm text-slate-400 transition-all">ซื้อทอง (สะสม)</div></label>
-                  <label class="flex-1 cursor-pointer"><input type="radio" name="goldType" value="sell" class="peer sr-only"><div class="text-center py-3 rounded-2xl border-2 border-slate-100 peer-checked:border-rose-500 peer-checked:bg-rose-50 peer-checked:text-rose-600 font-bold text-sm text-slate-400 transition-all">ขายทอง (ทำกำไร)</div></label>
-              </div>
-              <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">น้ำหนัก (บาททองคำ)</label><input id="in-g-weight" type="number" step="0.01" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="เช่น 1, 0.5, 0.25"></div>
-              <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ราคาที่ทำรายการ (ต่อ 1 บาททอง)</label><input id="in-g-price" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" placeholder="เช่น 40500"></div>
-              <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">วันที่ทำรายการ</label><input id="in-g-date" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${todayStr}"></div>
-              <button onclick="commitGold()" class="w-full py-4 gold-gradient text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-yellow-200 mt-2 active:scale-95 transition-transform">บันทึกพอร์ตทอง</button>
-          </div>
-      `);
-    };
-    window.commitGold = () => {
-      const type = document.querySelector('input[name="goldType"]:checked').value, w = document.getElementById('in-g-weight').value, p = document.getElementById('in-g-price').value, d = document.getElementById('in-g-date').value;
-      if (!w || !p || !d) return alert('กรอกข้อมูลน้ำหนักและราคาให้ครบนะคะเพื่อน');
-      state.gold.push({ id: Date.now().toString(), type: type, weight: Number(w), price: Number(p), date: d });
-      closeModal(); renderViewport(); forceSave();
-    };
-    window.editGold = (id) => {
-      const g = state.gold.find(x => x.id === id); if (!g) return;
-      openModal('แก้ไขการลงทุนทองคำ', `
-            <div class="space-y-4">
-                <div class="flex gap-2 mb-2">
-                    <label class="flex-1 cursor-pointer"><input type="radio" name="eGoldType" value="buy" ${g.type === 'buy' ? 'checked' : ''} class="peer sr-only"><div class="text-center py-3 rounded-2xl border-2 border-slate-100 peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-600 font-bold text-sm text-slate-400 transition-all">ซื้อทอง (สะสม)</div></label>
-                    <label class="flex-1 cursor-pointer"><input type="radio" name="eGoldType" value="sell" ${g.type === 'sell' ? 'checked' : ''} class="peer sr-only"><div class="text-center py-3 rounded-2xl border-2 border-slate-100 peer-checked:border-rose-500 peer-checked:bg-rose-50 peer-checked:text-rose-600 font-bold text-sm text-slate-400 transition-all">ขายทอง (ทำกำไร)</div></label>
-                </div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">น้ำหนัก (บาททองคำ)</label><input id="e-g-weight" type="number" step="0.01" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${g.weight}"></div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ราคาที่ทำรายการ (ต่อ 1 บาททอง)</label><input id="e-g-price" type="number" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${g.price}"></div>
-                <div><label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">วันที่ทำรายการ</label><input id="e-g-date" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-bold mt-1" value="${g.date}"></div>
-                <button onclick="updateGold('${id}')" class="w-full py-4 gold-gradient text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-yellow-200 mt-2 active:scale-95 transition-transform">อัปเดตรายการ</button>
-            </div>
-        `);
-    };
-    window.updateGold = (id) => {
-      const type = document.querySelector('input[name="eGoldType"]:checked').value, w = document.getElementById('e-g-weight').value, p = document.getElementById('e-g-price').value, d = document.getElementById('e-g-date').value;
-      if (!w || !p || !d) return alert('กรอกข้อมูลน้ำหนักและราคาให้ครบนะคะ');
-      const idx = state.gold.findIndex(x => x.id === id);
-      if (idx !== -1) { state.gold[idx] = { ...state.gold[idx], type: type, weight: Number(w), price: Number(p), date: d }; closeModal(); renderViewport(); forceSave(); }
-    };
-    window.delGold = (id) => { if (confirm("ต้องการลบประวัติการทำรายการนี้ใช่ไหมคะ?")) { state.gold = state.gold.filter(x => x.id !== id); renderViewport(); forceSave(); } };
-
-    // --- CARDS & INST FORMS (Shortened for space, logic works seamlessly) ---
-    window.openCardForm = () => { /* Add Card Form UI */ }; window.commitCard = () => { /* Logic */ }; window.editCard = (id) => { /* UI */ }; window.updateCard = (id) => { /* Logic */ }; window.delCard = (id) => { /* Logic */ };
-    window.openInstForm = () => { /* Add Inst Form UI */ }; window.commitInst = () => { /* Logic */ }; window.editInst = (id) => { /* UI */ }; window.updateInst = (id) => { /* Logic */ }; window.delInst = (id) => { /* Logic */ };
-
-    // Injecting standard forms quickly
-    window.openCardForm = () => { openModal('เพิ่มบัตรเครดิต', `<div><label class="text-[10px] font-bold text-slate-400">ชื่อบัตร</label><input id="in-n" class="w-full p-4 bg-slate-50 rounded-2xl mt-1"></div><div><label class="text-[10px] font-bold text-slate-400">วงเงินรวม</label><input id="in-l" type="number" class="w-full p-4 bg-slate-50 rounded-2xl mt-1"></div><div><label class="text-[10px] font-bold text-slate-400">วันตัดรอบ</label><input id="in-d" type="number" class="w-full p-4 bg-slate-50 rounded-2xl mt-1"></div><button onclick="commitCard()" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold mt-2">บันทึก</button>`); };
-    window.commitCard = () => { const n = document.getElementById('in-n').value, l = document.getElementById('in-l').value, d = document.getElementById('in-d').value; if (!n || !l || !d) return; state.cards.push({ id: Date.now().toString(), name: n, limit: Number(l), date: Number(d) }); closeModal(); renderViewport(); forceSave(); };
-    window.editCard = (id) => { const c = state.cards.find(x => x.id === id); openModal('แก้ไขบัตร', `<div><input id="in-n" value="${c.name}" class="w-full p-4 bg-slate-50 rounded-2xl mb-2"></div><div><input id="in-l" type="number" value="${c.limit}" class="w-full p-4 bg-slate-50 rounded-2xl mb-2"></div><div><input id="in-d" type="number" value="${c.date}" class="w-full p-4 bg-slate-50 rounded-2xl"></div><button onclick="updateCard('${id}')" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold mt-2">อัปเดต</button>`); };
-    window.updateCard = (id) => { const idx = state.cards.findIndex(x => x.id === id); state.cards[idx] = { ...state.cards[idx], name: document.getElementById('in-n').value, limit: Number(document.getElementById('in-l').value), date: Number(document.getElementById('in-d').value) }; closeModal(); renderViewport(); forceSave(); };
-    window.delCard = (id) => { if (confirm("ลบบัตร?")) { state.cards = state.cards.filter(x => x.id !== id); state.installments = state.installments.filter(x => x.cardId !== id); renderViewport(); forceSave(); } };
-    window.openInstForm = () => { if (state.cards.length === 0) return alert('เพิ่มบัตรก่อนค่ะ'); openModal('เพิ่มรายการผ่อน', `<select id="in-cid" class="w-full p-4 bg-slate-50 rounded-2xl mb-2">${state.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select><input id="in-item" placeholder="ชื่อสินค้า" class="w-full p-4 bg-slate-50 rounded-2xl mb-2"><div class="flex gap-2"><input id="in-s" type="month" class="w-full p-4 bg-slate-50 rounded-2xl mb-2"><input id="in-dr" type="number" placeholder="งวด" class="w-24 p-4 bg-slate-50 rounded-2xl mb-2"></div><input id="in-a" type="number" placeholder="ยอดจ่ายต่อเดือน" class="w-full p-4 bg-slate-50 rounded-2xl"><button onclick="commitInst()" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold mt-2">บันทึก</button>`); };
-    window.commitInst = () => { const c = document.getElementById('in-cid').value, n = document.getElementById('in-item').value, s = document.getElementById('in-s').value, d = document.getElementById('in-dr').value, a = document.getElementById('in-a').value; if (!n || !s || !d || !a) return; state.installments.push({ id: Date.now().toString(), cardId: c, name: n, startMonth: s, dur: Number(d), amount: Number(a) }); closeModal(); renderViewport(); forceSave(); };
-    window.editInst = (id) => { const inst = state.installments.find(x => x.id === id); openModal('แก้ไขรายการผ่อน', `<select id="in-cid" class="w-full p-4 bg-slate-50 rounded-2xl mb-2">${state.cards.map(c => `<option value="${c.id}" ${c.id === inst.cardId ? 'selected' : ''}>${c.name}</option>`).join('')}</select><input id="in-item" value="${inst.name}" class="w-full p-4 bg-slate-50 rounded-2xl mb-2"><div class="flex gap-2"><input id="in-s" type="month" value="${inst.startMonth}" class="w-full p-4 bg-slate-50 rounded-2xl mb-2"><input id="in-dr" type="number" value="${inst.dur}" class="w-24 p-4 bg-slate-50 rounded-2xl mb-2"></div><input id="in-a" type="number" value="${inst.amount}" class="w-full p-4 bg-slate-50 rounded-2xl"><button onclick="updateInst('${id}')" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold mt-2">อัปเดต</button>`); };
-    window.updateInst = (id) => { const idx = state.installments.findIndex(x => x.id === id); if (idx !== -1) { state.installments[idx] = { ...state.installments[idx], cardId: document.getElementById('in-cid').value, name: document.getElementById('in-item').value, startMonth: document.getElementById('in-s').value, dur: Number(document.getElementById('in-dr').value), amount: Number(document.getElementById('in-a').value) }; closeModal(); renderViewport(); forceSave(); } };
-    window.delInst = (id) => { if (confirm("ลบรายการผ่อน?")) { state.installments = state.installments.filter(x => x.id !== id); renderViewport(); forceSave(); } };
-
-    // --- SETTINGS MENU ---
-    window.showSettingsMenu = () => {
-      openModal('ตั้งค่าแอปพลิเคชัน', `
-          <div class="space-y-6">
-              <div>
-                  <h4 class="text-sm font-bold text-slate-800 mb-2">อัตราแลกเปลี่ยน (USD -> THB)</h4>
+              <div class="card-gradient p-5 rounded-3xl text-white shadow-lg relative overflow-hidden mb-3">
+                <div class="flex justify-between items-start mb-5 relative z-10">
                   <div class="flex items-center gap-3">
-                      <span class="text-xs font-bold text-slate-500 w-16 text-right">1 USD =</span>
-                      <input id="set-usd-rate" type="number" step="0.1" class="flex-1 p-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-sm font-bold text-slate-800 text-center" value="${state.settings.usdRate || 36.5}" onchange="updateUsdRate(this.value)">
-                      <span class="text-xs font-bold text-slate-500 w-8">บาท</span>
+                    <div class="w-8 h-8 bg-white/10 rounded-xl flex items-center justify-center">
+                      <i class="fa-solid fa-microchip text-xs text-white/60"></i>
+                    </div>
+                    <div>
+                      <h3 class="font-black text-lg leading-none">${c.name}</h3>
+                      ${dueBadge}
+                    </div>
                   </div>
-              </div>
-              <hr class="border-slate-100">
-              <div>
-                  <h4 class="text-sm font-bold text-slate-800 mb-3">การแจ้งเตือน</h4>
-                  <div class="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <div><p class="text-xs font-bold text-slate-700">เตือนวันชำระบัตรเครดิต</p><p class="text-[9px] text-slate-400 mt-0.5">แจ้งเตือนล่วงหน้า 3 วันก่อนวันตัดรอบ</p></div>
-                      <button onclick="toggleNotif()" class="w-12 h-6 rounded-full transition-colors relative shadow-inner ${state.settings.enableNotif ? 'bg-emerald-500' : 'bg-slate-300'}"><div class="w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all shadow-sm ${state.settings.enableNotif ? 'right-0.5' : 'left-0.5'}"></div></button>
+                  <div class="flex gap-2">
+                    <button onclick="editCard('${c.id}')" class="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center text-xs hover:bg-white/20 transition-colors"><i class="fa-solid fa-pen"></i></button>
+                    <button onclick="delCard('${c.id}')" class="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center text-xs text-white/50 hover:bg-red-500 hover:text-white transition-colors"><i class="fa-solid fa-trash"></i></button>
                   </div>
-              </div>
-              <hr class="border-slate-100">
-              <div>
-                  <h4 class="text-sm font-bold text-slate-800 mb-1">จัดการข้อมูล (Backup & Restore)</h4>
-                  <p class="text-[10px] text-slate-400 mb-3">แอปทำงานแบบ Offline ข้อมูลอยู่แค่ในเครื่องนี้ อย่าลืมเซฟเป็นประจำนะคะ</p>
-                  <div class="flex gap-2 mb-2">
-                      <button onclick="exportData()" class="flex-1 p-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold text-theme-primary hover:bg-theme-primary/10 transition-colors flex items-center justify-center gap-2"><i class="fa-solid fa-file-zipper"></i> เซฟเป็น .zip</button>
-                      <button onclick="document.getElementById('importFile').click()" class="flex-1 p-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold text-slate-600 hover:bg-theme-primary/10 transition-colors flex items-center justify-center gap-2"><i class="fa-solid fa-upload"></i> โหลดข้อมูล</button>
+                </div>
+                <div class="relative z-10 space-y-3">
+                  <div>
+                    <div class="flex justify-between text-[9px] font-bold text-white/50 uppercase tracking-widest mb-2">
+                      <span>ใช้ไป ฿${toCurr(used)}</span><span>${pct.toFixed(0)}%</span>
+                    </div>
+                    <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
                   </div>
-                  <button onclick="clearAllData()" class="w-full p-3.5 bg-rose-50 border border-rose-100 rounded-2xl text-xs font-bold text-rose-500 hover:bg-rose-100 transition-colors flex items-center justify-center gap-2"><i class="fa-solid fa-trash-can"></i> ล้างข้อมูลทั้งหมดในเครื่อง</button>
-              </div>
-              <button onclick="closeModal()" class="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold uppercase tracking-widest text-sm mt-4 active:scale-95 transition-transform">ปิดหน้าต่างนี้</button>
+                  <div class="flex justify-between items-end pt-1">
+                    <div>
+                      <p class="text-[8px] text-white/40 font-bold uppercase tracking-widest mb-0.5">วงเงินรวม</p>
+                      <p class="text-lg font-bold">฿${toCurr(c.limit)}</p>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-[8px] text-white/40 font-bold uppercase tracking-widest mb-0.5">ตัดรอบวันที่</p>
+                      <p class="text-3xl font-black text-theme-primary leading-none">${c.date}</p>
+                    </div>
+                  </div>
+                </div>
+                <i class="fa-brands fa-cc-visa absolute -bottom-5 -right-5 text-[80px] text-white/5"></i>
+              </div>`;
+          }).join('')}
+    </div>`;
+}
+
+/* ═══════════════════════════════════════════
+   PAGE: INSTALLMENTS
+═══════════════════════════════════════════ */
+function renderInstallments(container) {
+  const today = new Date();
+  const thisYm = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  const currentMonthTotal = state.installments.reduce((sum, i) => {
+    const end = shiftMonthStr(i.startMonth, i.dur - 1);
+    return (thisYm >= i.startMonth && thisYm <= end) ? sum + i.amount : sum;
+  }, 0);
+
+  /* calculate remaining installments */
+  const enriched = state.installments.map(i => {
+    const end = shiftMonthStr(i.startMonth, i.dur - 1);
+    const isActive = thisYm >= i.startMonth && thisYm <= end;
+    const [sy, sm] = i.startMonth.split('-').map(Number);
+    const [ty, tm] = thisYm.split('-').map(Number);
+    const elapsed = Math.max(0, (ty - sy) * 12 + (tm - sm));
+    const remaining = Math.max(0, i.dur - elapsed);
+    return { ...i, isActive, remaining, end };
+  });
+
+  const active   = enriched.filter(i => i.isActive);
+  const inactive = enriched.filter(i => !i.isActive);
+
+  container.innerHTML = `
+    <div class="space-y-4 fade-in">
+      <div class="section-head">
+        <h2>รายการผ่อนชำระ</h2>
+        <button onclick="openInstForm()" class="fab bg-theme-primary text-white">
+          <i class="fa-solid fa-plus"></i>
+        </button>
+      </div>
+
+      <!-- month summary hero -->
+      <div class="bg-theme-primary p-5 rounded-3xl text-white relative overflow-hidden shadow-theme">
+        <div class="relative z-10 flex justify-between items-center">
+          <div>
+            <p class="text-[9px] font-bold text-white/70 uppercase tracking-widest mb-1">
+              <i class="fa-solid fa-calendar-day mr-1"></i>ยอดผ่อนเดือนนี้
+            </p>
+            <p class="text-4xl font-black tracking-tight">฿${toCurr(currentMonthTotal)}</p>
+            <p class="text-[10px] text-white/60 mt-1">${active.length} รายการที่กำลังผ่อนอยู่</p>
           </div>
-      `);
-    };
+          <div class="w-14 h-14 bg-white/15 rounded-2xl flex items-center justify-center">
+            <i class="fa-solid fa-receipt text-2xl text-white/80"></i>
+          </div>
+        </div>
+        <i class="fa-solid fa-wave-square absolute -bottom-4 -right-4 text-[80px] text-white/8"></i>
+      </div>
 
-    window.updateUsdRate = (val) => { if (val && Number(val) > 0) { state.settings.usdRate = Number(val); forceSave(); renderViewport(); } };
-    window.setTheme = (c) => { applyTheme(c); forceSave(); closeModal(); renderViewport(); };
-    window.toggleNotif = () => { state.settings.enableNotif = !state.settings.enableNotif; forceSave(); showSettingsMenu(); renderViewport(); };
+      ${enriched.length === 0
+        ? `<div class="empty-state"><i class="fa-solid fa-cart-shopping"></i><p>ยังไม่มีรายการผ่อนค่ะ</p></div>`
+        : `
+          ${active.length > 0 ? `
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">กำลังผ่อนอยู่ (${active.length})</p>
+            <div class="space-y-3">
+              ${active.map(i => instCard(i, true)).join('')}
+            </div>
+          ` : ''}
 
-    // --- NOTIFICATIONS ---
-    window.showNotifs = () => {
-      if (!state.settings.enableNotif) {
-        openModal('การแจ้งเตือน', `<p class="text-center text-slate-400 py-8 text-xs font-bold uppercase tracking-widest">คุณได้ปิดการแจ้งเตือนไว้ค่ะ 🔕</p><button onclick="closeModal()" class="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold uppercase tracking-widest text-sm mt-4 active:scale-95 transition-transform">ปิดหน้าต่างนี้</button>`); return;
+          ${inactive.length > 0 ? `
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1 mt-2">รายการอื่น ๆ (${inactive.length})</p>
+            <div class="space-y-3">
+              ${inactive.map(i => instCard(i, false)).join('')}
+            </div>
+          ` : ''}
+        `}
+    </div>`;
+}
+
+function instCard(i, isActive) {
+  const card = state.cards.find(c => c.id === i.cardId);
+  const pct  = isActive ? Math.round(((i.dur - i.remaining) / i.dur) * 100) : 100;
+  return `
+    <div class="item-card p-4">
+      <div class="flex justify-between items-start mb-3">
+        <div class="flex items-center gap-3 flex-1 min-w-0">
+          <div class="w-10 h-10 ${isActive ? 'bg-theme-primary/10 text-theme-primary' : 'bg-slate-100 text-slate-400'} rounded-xl flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-box-open text-sm"></i>
+          </div>
+          <div class="min-w-0">
+            <h4 class="font-black text-slate-800 text-sm truncate">${i.name}</h4>
+            <p class="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">
+              <i class="fa-regular fa-credit-card mr-1"></i>${card?.name || '–'} · เริ่ม ${i.startMonth}
+            </p>
+          </div>
+        </div>
+        <div class="text-right shrink-0 ml-3">
+          <p class="text-base font-black text-theme-primary">฿${toCurr(i.amount)}</p>
+          <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">${isActive ? `เหลือ ${i.remaining} งวด` : `${i.dur} งวด`}</p>
+        </div>
+      </div>
+      ${isActive ? `
+        <div class="mb-3">
+          <div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div class="h-full bg-theme-primary rounded-full transition-all duration-700" style="width:${pct}%"></div>
+          </div>
+          <div class="flex justify-between text-[8px] font-bold text-slate-300 mt-1">
+            <span>ผ่านมา ${i.dur - i.remaining}/${i.dur} งวด</span><span>${pct}%</span>
+          </div>
+        </div>
+      ` : ''}
+      <div class="flex gap-4 justify-end">
+        <button onclick="editInst('${i.id}')" class="text-[10px] font-bold text-slate-400 hover:text-theme-primary uppercase tracking-widest transition-colors">แก้ไข</button>
+        <button onclick="delInst('${i.id}')" class="text-[10px] font-bold text-red-400 hover:text-red-600 uppercase tracking-widest transition-colors">ลบ</button>
+      </div>
+    </div>`;
+}
+
+/* ═══════════════════════════════════════════
+   PAGE: INVEST
+═══════════════════════════════════════════ */
+function renderInvest(container) {
+  const isGold  = state.investSubTab === 'gold';
+  const usdRate = state.settings.usdRate || 36.5;
+
+  let html = `
+    <div class="space-y-4 fade-in">
+      <div class="section-head">
+        <h2>พอร์ตลงทุน</h2>
+        <button onclick="${isGold ? 'openGoldForm()' : 'openStockForm()'}"
+          class="fab text-white ${isGold ? 'gold-gradient' : 'bg-blue-500'}" style="${isGold ? 'box-shadow:0 6px 20px rgba(251,191,36,0.4)' : 'box-shadow:0 6px 20px rgba(59,130,246,0.4)'}">
+          <i class="fa-solid fa-plus"></i>
+        </button>
+      </div>
+
+      <!-- sub-tab -->
+      <div class="pill-group">
+        <label>
+          <input type="radio" name="investTab" value="stocks" ${!isGold?'checked':''} onchange="switchInvestSubTab('stocks')">
+          <span class="pill-opt"><i class="fa-solid fa-chart-line mr-1"></i>หุ้น / กองทุน</span>
+        </label>
+        <label>
+          <input type="radio" name="investTab" value="gold" ${isGold?'checked':''} onchange="switchInvestSubTab('gold')">
+          <span class="pill-opt"><i class="fa-solid fa-coins mr-1"></i>ทองคำ</span>
+        </label>
+      </div>`;
+
+  if (isGold) {
+    let totalWeight = 0, totalInvestment = 0;
+    state.gold.forEach(g => {
+      if (g.type === 'buy')  { totalWeight += g.weight; totalInvestment += g.weight * g.price; }
+      else if (g.type === 'sell') { totalWeight -= g.weight; totalInvestment -= g.weight * g.price; }
+    });
+    const sorted = [...state.gold].sort((a,b) => new Date(b.date)-new Date(a.date));
+
+    html += `
+      <div class="gold-gradient p-5 rounded-3xl text-white shadow-lg shadow-yellow-300/30 relative overflow-hidden">
+        <div class="relative z-10 flex justify-between items-start mb-4">
+          <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+            <i class="fa-solid fa-coins text-lg"></i>
+          </div>
+          <span class="text-[9px] font-bold uppercase tracking-widest bg-white/20 px-3 py-1 rounded-full">สินทรัพย์มั่นคง</span>
+        </div>
+        <div class="relative z-10">
+          <p class="text-[9px] font-bold text-white/60 uppercase tracking-widest mb-1">น้ำหนักทองรวม</p>
+          <p class="text-4xl font-black">${totalWeight.toFixed(2)} <span class="text-lg font-semibold text-yellow-100">บาท</span></p>
+          <div class="mt-4 pt-4 border-t border-white/20 flex justify-between items-end">
+            <div>
+              <p class="text-[8px] font-bold text-white/60 uppercase tracking-widest mb-0.5">เงินลงทุนสุทธิ</p>
+              <p class="text-base font-bold">฿${toCurr(totalInvestment)}</p>
+            </div>
+            <div class="text-right">
+              <p class="text-[8px] font-bold text-white/60 uppercase tracking-widest mb-0.5">ต้นทุนเฉลี่ย/บาท</p>
+              <p class="text-sm font-bold text-yellow-100">${totalWeight > 0 ? '฿'+toCurr(totalInvestment/totalWeight) : '—'}</p>
+            </div>
+          </div>
+        </div>
+        <i class="fa-solid fa-vault absolute -bottom-6 -right-4 text-[90px] text-white/8"></i>
+      </div>
+
+      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">ประวัติทำรายการ</p>
+      ${sorted.length === 0
+        ? `<div class="empty-state"><i class="fa-solid fa-piggy-bank"></i><p>ยังไม่มีรายการทองคำค่ะ</p></div>`
+        : `<div class="space-y-3">${sorted.map(g => `
+            <div class="item-card p-4 flex justify-between items-center">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 ${g.type==='buy'?'bg-emerald-50 text-emerald-500':'bg-rose-50 text-rose-500'} rounded-xl flex items-center justify-center shrink-0">
+                  <i class="fa-solid ${g.type==='buy'?'fa-arrow-down':'fa-arrow-up'} text-sm"></i>
+                </div>
+                <div>
+                  <p class="text-sm font-black text-slate-800">${g.type==='buy'?'ซื้อทองคำ':'ขายทองคำ'}</p>
+                  <p class="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">${g.date}</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <p class="text-sm font-black ${g.type==='buy'?'text-emerald-500':'text-rose-500'}">${g.type==='buy'?'+':'-'}${g.weight} บาท</p>
+                <p class="text-[9px] font-bold text-slate-400 mt-0.5">@ ฿${toCurr(g.price)}/บาท</p>
+                <div class="flex justify-end gap-3 mt-1.5">
+                  <button onclick="editGold('${g.id}')" class="text-[9px] font-bold text-slate-400 hover:text-theme-primary uppercase tracking-widest">แก้ไข</button>
+                  <button onclick="delGold('${g.id}')" class="text-[9px] font-bold text-red-400 hover:text-red-600 uppercase tracking-widest">ลบ</button>
+                </div>
+              </div>
+            </div>`).join('')}</div>`}`;
+
+  } else {
+    /* STOCKS */
+    let totalInTHB = 0, totalOutTHB = 0;
+    let currentShares = {}, currentInvested = {}, currentCurrency = {};
+
+    state.stocks.forEach(s => {
+      const rate = s.currency === 'USD' ? usdRate : 1;
+      const val  = (s.type === 'dividend' ? s.price : s.shares * s.price) * rate;
+      if (!currentShares[s.symbol]) { currentShares[s.symbol] = 0; currentInvested[s.symbol] = 0; currentCurrency[s.symbol] = s.currency || 'THB'; }
+      if (s.type === 'buy') { totalInTHB += val; currentShares[s.symbol] += s.shares; currentInvested[s.symbol] += val; }
+      else if (s.type === 'sell') {
+        totalOutTHB += val;
+        if (currentShares[s.symbol] > 0) {
+          const prop = s.shares / currentShares[s.symbol];
+          currentShares[s.symbol] -= s.shares;
+          currentInvested[s.symbol] -= currentInvested[s.symbol] * prop;
+        }
+      } else if (s.type === 'dividend') { totalOutTHB += val; }
+    });
+
+    let totalCurrentValueTHB = 0;
+    let activeStocksHTML = '';
+
+    Object.keys(currentShares).forEach(sym => {
+      if (currentShares[sym] > 0) {
+        const cCurr = currentCurrency[sym];
+        const rate  = cCurr === 'USD' ? usdRate : 1;
+        const avgCostTHB  = currentInvested[sym] / currentShares[sym];
+        const avgCostOrig = avgCostTHB / rate;
+        let mktPrice  = state.marketPrices[sym];
+        const hasPrice = !!mktPrice;
+        if (!mktPrice) mktPrice = avgCostOrig;
+        const currValTHB = currentShares[sym] * mktPrice * rate;
+        totalCurrentValueTHB += currValTHB;
+        const sym2 = cCurr === 'USD' ? '$' : '฿';
+
+        activeStocksHTML += `
+          <button onclick="openMarketPriceForm('${sym}','${cCurr}')" class="w-full bg-white/10 rounded-2xl p-3.5 flex justify-between items-center hover:bg-white/20 transition-colors active:scale-98 text-left">
+            <div>
+              <p class="text-base font-black text-white">${sym}</p>
+              <p class="text-[9px] font-bold ${hasPrice?'text-emerald-300':'text-yellow-300'} mt-0.5">
+                <i class="fa-solid ${hasPrice?'fa-check-circle':'fa-pen-to-square'} mr-1"></i>${hasPrice?'อัปเดตแล้ว':'แตะเพื่ออัปเดตราคา'}
+              </p>
+            </div>
+            <div class="text-right">
+              <p class="text-sm font-bold text-white">${currentShares[sym].toFixed(4)} หุ้น</p>
+              <p class="text-[9px] text-white/70">${sym2}${toCurr(avgCostOrig)} avg</p>
+            </div>
+          </button>`;
       }
-      const today = new Date().getDate();
-      const list = state.cards.filter(c => { const diff = c.date - today; return diff >= 0 && diff <= 3; });
-      openModal('การแจ้งเตือน', `<div class="space-y-3">${list.length === 0 ? '<p class="text-center text-slate-400 py-8 text-xs font-bold uppercase tracking-widest">ยังไม่มีเรื่องด่วนค่ะ ✌️</p>' : list.map(c => `<div class="p-4 rounded-2xl bg-slate-50 flex items-center gap-4 border border-slate-100"><div class="w-10 h-10 bg-theme-primary/10 rounded-full flex items-center justify-center text-theme-primary"><i class="fa-solid fa-clock"></i></div><div><p class="text-sm font-black text-slate-800">บัตร ${c.name}</p><p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">ตัดรอบใน ${c.date - today === 0 ? 'วันนี้!' : 'อีก ' + (c.date - today) + ' วัน'}</p></div></div>`).join('')}<button onclick="closeModal()" class="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold uppercase tracking-widest text-sm mt-4 active:scale-95 transition-transform">ปิดหน้าต่างนี้</button></div>`);
-    };
-    function updateNotifs() {
-      const dot = document.getElementById('notif-dot'); if (!dot) return;
-      if (!state.settings.enableNotif) { dot.classList.add('hidden'); return; }
-      const today = new Date().getDate();
-      const has = state.cards.some(c => (c.date - today) >= 0 && (c.date - today) <= 3);
-      if (has) dot.classList.remove('hidden'); else dot.classList.add('hidden');
+    });
+
+    const profitLoss = (totalCurrentValueTHB + totalOutTHB) - totalInTHB;
+    const profitPct  = totalInTHB > 0 ? (profitLoss / totalInTHB) * 100 : 0;
+    const isProfit   = profitLoss >= 0;
+    const sorted = [...state.stocks].sort((a,b) => new Date(b.date)-new Date(a.date));
+
+    html += `
+      <div class="stock-gradient rounded-3xl p-5 text-white shadow-lg shadow-blue-300/30 relative overflow-hidden">
+        <div class="relative z-10 flex justify-between items-start mb-4">
+          <div>
+            <div class="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-lg mb-3">📈</div>
+            <p class="text-xs font-semibold text-white/80 mb-1">มูลค่าสินทรัพย์รวม (THB)</p>
+            <p class="text-[32px] font-extrabold tracking-tight leading-none">฿${toCurr(totalCurrentValueTHB)}</p>
+            <div class="mt-2 inline-flex items-center gap-1.5 ${isProfit?'bg-emerald-500/25 text-emerald-300':'bg-rose-500/25 text-rose-300'} px-3 py-1 rounded-xl">
+              <i class="fa-solid ${isProfit?'fa-arrow-trend-up':'fa-arrow-trend-down'} text-xs"></i>
+              <span class="text-xs font-bold">${isProfit?'+':''}฿${toCurr(Math.abs(profitLoss))} / ${isProfit?'+':''}${profitPct.toFixed(2)}%</span>
+            </div>
+          </div>
+          <div class="bg-white/15 px-3 py-1.5 rounded-full text-[9px] font-bold">พอร์ตรวม</div>
+        </div>
+        <p class="text-[9px] font-bold text-white/60 uppercase tracking-widest mb-2 pt-3 border-t border-white/15">
+          ถือครองปัจจุบัน (แตะเพื่อใส่ราคาตลาด)
+        </p>
+        <div class="space-y-2">${activeStocksHTML || '<p class="text-xs text-white/40 text-center py-2">ยังไม่มีหุ้นในพอร์ตค่ะ</p>'}</div>
+        <i class="fa-solid fa-chart-line absolute -bottom-6 -right-6 text-[90px] text-white/8"></i>
+      </div>
+
+      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">ประวัติรายการ</p>
+      ${sorted.length === 0
+        ? `<div class="empty-state"><i class="fa-solid fa-seedling"></i><p>ยังไม่มีรายการลงทุนค่ะ</p></div>`
+        : `<div class="space-y-3">${sorted.map(s => {
+            const c = s.currency || 'THB';
+            const sym2 = c === 'USD' ? '$' : '฿';
+            let icon, bg, tc, typeLabel, detail, amount;
+            if (s.type === 'buy')      { icon='fa-cart-plus';          bg='bg-blue-50';   tc='text-blue-500';   typeLabel='ซื้อ';        detail=`${s.shares} หุ้น @ ${sym2}${toCurr(s.price)}`; amount=`${sym2}${toCurr(s.shares*s.price)}`; }
+            else if (s.type === 'sell'){ icon='fa-hand-holding-dollar'; bg='bg-orange-50'; tc='text-orange-500'; typeLabel='ขาย';        detail=`${s.shares} หุ้น @ ${sym2}${toCurr(s.price)}`; amount=`${sym2}${toCurr(s.shares*s.price)}`; }
+            else                       { icon='fa-sack-dollar';         bg='bg-purple-50'; tc='text-purple-500'; typeLabel='ปันผล';      detail='โอนเข้าพอร์ต';                                  amount=`+${sym2}${toCurr(s.price)}`; }
+            return `
+              <div class="item-card p-4 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 ${bg} ${tc} rounded-xl flex items-center justify-center shrink-0"><i class="fa-solid ${icon} text-sm"></i></div>
+                  <div>
+                    <p class="text-sm font-black text-slate-800">${s.symbol}</p>
+                    <p class="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wider"><span class="${tc}">${typeLabel}</span> · ${s.date}</p>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <p class="text-sm font-black text-slate-800">${amount}</p>
+                  <p class="text-[9px] font-bold text-slate-400 mt-0.5">${detail}</p>
+                  <div class="flex justify-end gap-3 mt-1.5">
+                    <button onclick="editStock('${s.id}')" class="text-[9px] font-bold text-slate-400 hover:text-theme-primary uppercase tracking-widest">แก้ไข</button>
+                    <button onclick="delStock('${s.id}')" class="text-[9px] font-bold text-red-400 hover:text-red-600 uppercase tracking-widest">ลบ</button>
+                  </div>
+                </div>
+              </div>`;
+          }).join('')}</div>`}`;
+  }
+
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════
+   PAGE: SUMMARY
+═══════════════════════════════════════════ */
+function renderSummary(container) {
+  let first = '9999-99', last = '0000-00';
+  if (state.installments.length > 0) {
+    state.installments.forEach(i => {
+      if (i.startMonth < first) first = i.startMonth;
+      const end = shiftMonthStr(i.startMonth, i.dur - 1);
+      if (end > last) last = end;
+    });
+  }
+  const stats = [];
+  if (first !== '9999-99') {
+    let cur = first;
+    while (cur <= last && stats.length < 36) {
+      let s = 0;
+      state.installments.forEach(i => {
+        const e = shiftMonthStr(i.startMonth, i.dur - 1);
+        if (cur >= i.startMonth && cur <= e) s += i.amount;
+      });
+      stats.push({ ym: cur, total: s });
+      cur = shiftMonthStr(cur, 1);
     }
+  }
 
-    window.onload = run;
-  </script>
+  const today = new Date();
+  const thisYm = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  const thisMonth = stats.find(s => s.ym === thisYm);
+  const maxMonth  = stats.reduce((mx, s) => s.total > mx.total ? s : mx, { total: 0 });
+  const totalBurden = stats.reduce((s, r) => s + r.total, 0);
+
+  container.innerHTML = `
+    <div class="space-y-4 fade-in">
+      <div class="section-head"><h2>วิเคราะห์การเงิน</h2></div>
+
+      ${stats.length > 0 ? `
+        <!-- KPI row -->
+        <div class="grid grid-cols-3 gap-3">
+          <div class="item-card p-4 text-center">
+            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">เดือนนี้</p>
+            <p class="text-base font-black text-theme-primary">฿${toCurr(thisMonth?.total||0)}</p>
+          </div>
+          <div class="item-card p-4 text-center">
+            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">สูงสุด</p>
+            <p class="text-base font-black text-rose-500">฿${toCurr(maxMonth.total)}</p>
+          </div>
+          <div class="item-card p-4 text-center">
+            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">รวมทั้งหมด</p>
+            <p class="text-base font-black text-slate-800">฿${toCurr(totalBurden)}</p>
+          </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="item-card p-5">
+          <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">แผนภูมิภาระผ่อน</p>
+          <div style="height:180px"><canvas id="sumChart"></canvas></div>
+        </div>
+
+        <!-- Table -->
+        <div class="item-card overflow-hidden">
+          <div class="px-5 py-3 bg-slate-50 border-b border-slate-100 flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+            <span>เดือน</span><span>ยอดผ่อนรวม</span>
+          </div>
+          ${stats.map(s => {
+            const isCurrent = s.ym === thisYm;
+            return `
+              <div class="summary-row ${isCurrent ? 'bg-theme-primary/5' : 'hover:bg-slate-50'} transition-colors">
+                <div class="flex items-center gap-2">
+                  ${isCurrent ? '<div class="w-2 h-2 bg-theme-primary rounded-full"></div>' : '<div class="w-2 h-2"></div>'}
+                  <p class="text-sm font-${isCurrent?'black':'bold'} text-slate-${isCurrent?'800':'600'}">${formatThaiMonth(s.ym)}</p>
+                </div>
+                <p class="text-sm font-black text-${isCurrent?'theme-primary':'slate-700'}">฿${toCurr(s.total)}</p>
+              </div>`;
+          }).join('')}
+        </div>
+      ` : `<div class="empty-state"><i class="fa-solid fa-chart-bar"></i><p>ยังไม่มีข้อมูลให้วิเคราะห์ค่ะ<br>ลองเพิ่มรายการผ่อนก่อนนะคะ</p></div>`}
+
+      <!-- AI button -->
+      <button onclick="askAIAdvisor()" class="w-full py-4 ai-gradient text-white rounded-3xl font-bold flex items-center justify-center gap-3 relative overflow-hidden active:scale-95 transition-transform shadow-lg shadow-indigo-200">
+        <div class="absolute inset-0 shimmer"></div>
+        <i class="fa-solid fa-wand-magic-sparkles relative z-10"></i>
+        <span class="relative z-10">ให้ AI เก๋ ช่วยวิเคราะห์การเงิน</span>
+      </button>
+    </div>`;
+
+  if (stats.length > 0) {
+    setTimeout(() => {
+      const canvas = document.getElementById('sumChart'); if (!canvas) return;
+      if (chartInstance) chartInstance.destroy();
+      const color = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
+      chartInstance = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: stats.map(s => { const [y,m]=s.ym.split('-'); return ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][parseInt(m)-1]+' '+y.slice(2); }),
+          datasets: [{
+            data: stats.map(s => s.total),
+            backgroundColor: stats.map(s => s.ym === thisYm ? color : color+'60'),
+            borderRadius: 8, barThickness: 14
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { display: false, beginAtZero: true },
+            x: { grid: { display: false }, ticks: { font: { family:'Kanit', size:9 }, color:'#94a3b8' }, border: { display: false } }
+          },
+          animation: { duration: 800, easing: 'easeOutQuart' }
+        }
+      });
+    }, 80);
+  }
+}
+
+/* ═══════════════════════════════════════════
+   AI ADVISOR
+═══════════════════════════════════════════ */
+async function fetchGeminiAPI(prompt, expectJson = false) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    systemInstruction: { parts: [{ text: "You are 'Kae' (เก๋), a friendly expert Thai financial advisor in an app named Meetang. Reply briefly in Thai. Use emojis. Call the user 'เบนซ์'. No health/medical advice." }] }
+  };
+  if (expectJson) payload.generationConfig = { responseMimeType: 'application/json' };
+  try {
+    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error();
+    const d = await res.json();
+    return expectJson ? JSON.parse(d.candidates[0].content.parts[0].text) : d.candidates[0].content.parts[0].text;
+  } catch { return null; }
+}
+
+window.askAIAdvisor = async () => {
+  openModal('AI เก๋ กำลังวิเคราะห์...', `<div class="flex flex-col items-center py-8 gap-3"><i class="fa-solid fa-circle-notch fa-spin text-3xl text-theme-primary"></i><p class="text-xs font-bold text-slate-400 uppercase tracking-widest animate-pulse">กำลังคิด...</p></div>`);
+  const today = new Date();
+  const thisYm = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  const monthTotal = state.installments.reduce((s, i) => {
+    const end = shiftMonthStr(i.startMonth, i.dur - 1);
+    return (thisYm >= i.startMonth && thisYm <= end) ? s + i.amount : s;
+  }, 0);
+  const prompt = `ฉันมีภาระผ่อนรายเดือน ฿${toCurr(monthTotal)} บาท จากรายการผ่อน ${state.installments.length} รายการ, บัตรเครดิต ${state.cards.length} ใบ, พอร์ตหุ้น ${state.stocks.length} รายการ, และทองคำ ${state.gold.length} รายการ ช่วยวิเคราะห์สภาพการเงินและให้คำแนะนำสั้น ๆ หน่อยนะคะ`;
+  const reply = await fetchGeminiAPI(prompt);
+  openModal('คำแนะนำจาก AI เก๋ ✨', `
+    <div class="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 mb-4">
+      <p class="text-sm font-semibold text-slate-700 leading-relaxed">${reply || 'ขออภัย ไม่สามารถเชื่อมต่อได้ในขณะนี้ค่ะ กรุณาตรวจสอบ API Key ด้วยนะคะ'}</p>
+    </div>
+    <button onclick="closeModal()" class="w-full py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm uppercase tracking-widest active:scale-95 transition-transform">ปิดหน้าต่าง</button>`);
+};
+
+/* ═══════════════════════════════════════════
+   MARKET PRICE FORM
+═══════════════════════════════════════════ */
+window.openMarketPriceForm = (sym, currency) => {
+  const cur = state.marketPrices[sym] || '';
+  const label = currency === 'USD' ? 'USD ($)' : 'THB (฿)';
+  openModal(`ราคาตลาด — ${sym}`, `
+    <div class="space-y-4">
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ราคาตลาดปัจจุบัน (${label})</label>
+        <input id="in-mkt-pr" type="number" step="0.01" class="input-field" value="${cur}" placeholder="ระบุราคาตลาดล่าสุด">
+      </div>
+      <div class="flex gap-3">
+        <button onclick="saveMarketPrice('${sym}')" class="flex-1 py-4 bg-blue-500 text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform">บันทึกราคา</button>
+        <button onclick="clearMarketPrice('${sym}')" class="w-20 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm active:scale-95 transition-transform"><i class="fa-solid fa-eraser"></i></button>
+      </div>
+      <button onclick="closeModal()" class="w-full py-3 bg-slate-50 text-slate-500 rounded-2xl font-bold text-xs uppercase tracking-widest">ยกเลิก</button>
+    </div>`);
+};
+
+window.saveMarketPrice = (sym) => {
+  const pr = document.getElementById('in-mkt-pr').value;
+  if (!state.marketPrices) state.marketPrices = {};
+  if (pr) state.marketPrices[sym] = Number(pr); else delete state.marketPrices[sym];
+  forceSave(); closeModal(); renderViewport();
+};
+
+window.clearMarketPrice = (sym) => {
+  if (state.marketPrices) delete state.marketPrices[sym];
+  forceSave(); closeModal(); renderViewport();
+};
+
+/* ═══════════════════════════════════════════
+   CARD FORMS
+═══════════════════════════════════════════ */
+window.openCardForm = () => {
+  openModal('เพิ่มบัตรเครดิต', `
+    <div class="space-y-4">
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ชื่อบัตร</label>
+        <input id="in-n" class="input-field" placeholder="เช่น KBANK Platinum">
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">วงเงินรวม (฿)</label>
+        <input id="in-l" type="number" class="input-field" placeholder="เช่น 50000">
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">วันตัดรอบ (1-31)</label>
+        <input id="in-d" type="number" min="1" max="31" class="input-field" placeholder="เช่น 15">
+      </div>
+      <button onclick="commitCard()" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold text-sm uppercase tracking-widest active:scale-95 transition-transform shadow-theme">บันทึกบัตร</button>
+    </div>`);
+};
+
+window.commitCard = () => {
+  const n=document.getElementById('in-n').value, l=document.getElementById('in-l').value, d=document.getElementById('in-d').value;
+  if (!n||!l||!d) return alert('กรอกข้อมูลให้ครบนะคะ');
+  state.cards.push({ id: Date.now().toString(), name:n, limit:Number(l), date:Number(d) });
+  closeModal(); renderViewport(); forceSave();
+};
+
+window.editCard = (id) => {
+  const c = state.cards.find(x => x.id === id);
+  openModal('แก้ไขบัตร', `
+    <div class="space-y-4">
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ชื่อบัตร</label>
+        <input id="in-n" value="${c.name}" class="input-field">
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">วงเงินรวม (฿)</label>
+        <input id="in-l" type="number" value="${c.limit}" class="input-field">
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">วันตัดรอบ</label>
+        <input id="in-d" type="number" value="${c.date}" class="input-field">
+      </div>
+      <button onclick="updateCard('${id}')" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold text-sm uppercase tracking-widest active:scale-95 transition-transform shadow-theme">อัปเดตบัตร</button>
+    </div>`);
+};
+
+window.updateCard = (id) => {
+  const idx = state.cards.findIndex(x => x.id === id);
+  state.cards[idx] = { ...state.cards[idx], name:document.getElementById('in-n').value, limit:Number(document.getElementById('in-l').value), date:Number(document.getElementById('in-d').value) };
+  closeModal(); renderViewport(); forceSave();
+};
+
+window.delCard = (id) => {
+  if (confirm('ลบบัตรนี้? รายการผ่อนที่ผูกอยู่จะถูกลบด้วยค่ะ')) {
+    state.cards = state.cards.filter(x => x.id !== id);
+    state.installments = state.installments.filter(x => x.cardId !== id);
+    renderViewport(); forceSave();
+  }
+};
+
+/* ═══════════════════════════════════════════
+   INSTALLMENT FORMS
+═══════════════════════════════════════════ */
+window.openInstForm = () => {
+  if (state.cards.length === 0) return alert('กรุณาเพิ่มบัตรเครดิตก่อนนะคะ');
+  const todayYm = new Date().toISOString().slice(0,7);
+  openModal('เพิ่มรายการผ่อน', `
+    <div class="space-y-4">
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">เลือกบัตร</label>
+        <select id="in-cid" class="input-field">${state.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ชื่อสินค้า / รายการ</label>
+        <input id="in-item" class="input-field" placeholder="เช่น iPhone 15 Pro">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">เดือนที่เริ่มผ่อน</label>
+          <input id="in-s" type="month" value="${todayYm}" class="input-field">
+        </div>
+        <div>
+          <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">จำนวนงวด</label>
+          <input id="in-dr" type="number" min="1" class="input-field" placeholder="เช่น 12">
+        </div>
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ยอดจ่าย/เดือน (฿)</label>
+        <input id="in-a" type="number" step="0.01" class="input-field" placeholder="เช่น 1500">
+      </div>
+      <button onclick="commitInst()" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold text-sm uppercase tracking-widest active:scale-95 transition-transform shadow-theme">บันทึกรายการผ่อน</button>
+    </div>`);
+};
+
+window.commitInst = () => {
+  const c=document.getElementById('in-cid').value, n=document.getElementById('in-item').value;
+  const s=document.getElementById('in-s').value, d=document.getElementById('in-dr').value, a=document.getElementById('in-a').value;
+  if (!n||!s||!d||!a) return alert('กรอกข้อมูลให้ครบนะคะ');
+  state.installments.push({ id:Date.now().toString(), cardId:c, name:n, startMonth:s, dur:Number(d), amount:Number(a) });
+  closeModal(); renderViewport(); forceSave();
+};
+
+window.editInst = (id) => {
+  const i = state.installments.find(x => x.id === id);
+  openModal('แก้ไขรายการผ่อน', `
+    <div class="space-y-4">
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">เลือกบัตร</label>
+        <select id="in-cid" class="input-field">${state.cards.map(c=>`<option value="${c.id}" ${c.id===i.cardId?'selected':''}>${c.name}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ชื่อสินค้า</label>
+        <input id="in-item" value="${i.name}" class="input-field">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">เดือนที่เริ่ม</label>
+          <input id="in-s" type="month" value="${i.startMonth}" class="input-field">
+        </div>
+        <div>
+          <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">จำนวนงวด</label>
+          <input id="in-dr" type="number" value="${i.dur}" class="input-field">
+        </div>
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ยอดจ่าย/เดือน (฿)</label>
+        <input id="in-a" type="number" step="0.01" value="${i.amount}" class="input-field">
+      </div>
+      <button onclick="updateInst('${id}')" class="w-full py-4 bg-theme-primary text-white rounded-2xl font-bold text-sm uppercase tracking-widest active:scale-95 transition-transform shadow-theme">อัปเดตรายการ</button>
+    </div>`);
+};
+
+window.updateInst = (id) => {
+  const idx = state.installments.findIndex(x => x.id === id);
+  if (idx !== -1) {
+    state.installments[idx] = { ...state.installments[idx],
+      cardId:document.getElementById('in-cid').value, name:document.getElementById('in-item').value,
+      startMonth:document.getElementById('in-s').value, dur:Number(document.getElementById('in-dr').value),
+      amount:Number(document.getElementById('in-a').value)
+    };
+    closeModal(); renderViewport(); forceSave();
+  }
+};
+
+window.delInst = (id) => {
+  if (confirm('ลบรายการผ่อนนี้?')) { state.installments = state.installments.filter(x => x.id !== id); renderViewport(); forceSave(); }
+};
+
+/* ═══════════════════════════════════════════
+   GOLD FORMS
+═══════════════════════════════════════════ */
+window.openGoldForm = () => {
+  const todayStr = new Date().toISOString().split('T')[0];
+  openModal('บันทึกการลงทุนทองคำ', `
+    <div class="space-y-4">
+      <div class="pill-group">
+        <label><input type="radio" name="goldType" value="buy" checked><span class="pill-opt text-emerald-600">🟢 ซื้อทอง (สะสม)</span></label>
+        <label><input type="radio" name="goldType" value="sell"><span class="pill-opt text-rose-600">🔴 ขายทอง (กำไร)</span></label>
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">น้ำหนัก (บาททองคำ)</label>
+        <input id="in-g-weight" type="number" step="0.01" class="input-field" placeholder="เช่น 1, 0.5, 0.25">
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ราคาที่ทำรายการ (ต่อ 1 บาท)</label>
+        <input id="in-g-price" type="number" class="input-field" placeholder="เช่น 40500">
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">วันที่ทำรายการ</label>
+        <input id="in-g-date" type="date" class="input-field" value="${todayStr}">
+      </div>
+      <button onclick="commitGold()" class="w-full py-4 gold-gradient text-white rounded-2xl font-bold text-sm uppercase tracking-widest active:scale-95 transition-transform">บันทึกพอร์ตทอง</button>
+    </div>`);
+};
+
+window.commitGold = () => {
+  const type = document.querySelector('input[name="goldType"]:checked').value;
+  const w=document.getElementById('in-g-weight').value, p=document.getElementById('in-g-price').value, d=document.getElementById('in-g-date').value;
+  if (!w||!p||!d) return alert('กรอกข้อมูลให้ครบนะคะ');
+  state.gold.push({ id:Date.now().toString(), type, weight:Number(w), price:Number(p), date:d });
+  closeModal(); renderViewport(); forceSave();
+};
+
+window.editGold = (id) => {
+  const g = state.gold.find(x => x.id === id); if (!g) return;
+  openModal('แก้ไขรายการทองคำ', `
+    <div class="space-y-4">
+      <div class="pill-group">
+        <label><input type="radio" name="eGoldType" value="buy" ${g.type==='buy'?'checked':''}><span class="pill-opt text-emerald-600">🟢 ซื้อทอง</span></label>
+        <label><input type="radio" name="eGoldType" value="sell" ${g.type==='sell'?'checked':''}><span class="pill-opt text-rose-600">🔴 ขายทอง</span></label>
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">น้ำหนัก (บาท)</label>
+        <input id="e-g-weight" type="number" step="0.01" class="input-field" value="${g.weight}">
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ราคา (ต่อ 1 บาททอง)</label>
+        <input id="e-g-price" type="number" class="input-field" value="${g.price}">
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">วันที่</label>
+        <input id="e-g-date" type="date" class="input-field" value="${g.date}">
+      </div>
+      <button onclick="updateGold('${id}')" class="w-full py-4 gold-gradient text-white rounded-2xl font-bold text-sm uppercase tracking-widest active:scale-95 transition-transform">อัปเดตรายการ</button>
+    </div>`);
+};
+
+window.updateGold = (id) => {
+  const type = document.querySelector('input[name="eGoldType"]:checked').value;
+  const w=document.getElementById('e-g-weight').value, p=document.getElementById('e-g-price').value, d=document.getElementById('e-g-date').value;
+  if (!w||!p||!d) return alert('กรอกข้อมูลให้ครบนะคะ');
+  const idx = state.gold.findIndex(x => x.id === id);
+  if (idx !== -1) { state.gold[idx] = { ...state.gold[idx], type, weight:Number(w), price:Number(p), date:d }; closeModal(); renderViewport(); forceSave(); }
+};
+
+window.delGold = (id) => {
+  if (confirm('ลบรายการทองนี้?')) { state.gold = state.gold.filter(x => x.id !== id); renderViewport(); forceSave(); }
+};
+
+/* ═══════════════════════════════════════════
+   STOCK FORMS
+═══════════════════════════════════════════ */
+window.openStockForm = () => {
+  const todayStr = new Date().toISOString().split('T')[0];
+  openModal('บันทึกพอร์ตหุ้น / กองทุน', `
+    <div class="space-y-4">
+      <div class="pill-group">
+        <label><input type="radio" name="stockType" value="buy" checked onchange="toggleStockType()"><span class="pill-opt text-blue-600">ซื้อ</span></label>
+        <label><input type="radio" name="stockType" value="sell" onchange="toggleStockType()"><span class="pill-opt text-orange-600">ขาย</span></label>
+        <label><input type="radio" name="stockType" value="dividend" onchange="toggleStockType()"><span class="pill-opt text-purple-600">ปันผล</span></label>
+      </div>
+      <div class="pill-group">
+        <label><input type="radio" name="stockCurr" value="THB" checked onchange="toggleStockType()"><span class="pill-opt">THB (฿)</span></label>
+        <label><input type="radio" name="stockCurr" value="USD" onchange="toggleStockType()"><span class="pill-opt">USD ($)</span></label>
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ชื่อหุ้น / กองทุน</label>
+        <input id="in-s-sym" type="text" class="input-field uppercase" placeholder="เช่น AAPL, PTT, KBANK">
+      </div>
+      <div class="grid grid-cols-2 gap-3" id="stock-shares-row">
+        <div id="box-shares">
+          <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">จำนวนหุ้น</label>
+          <input id="in-s-sh" type="number" step="0.0001" class="input-field" placeholder="จำนวน">
+        </div>
+        <div>
+          <label id="lbl-price" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ราคา/หุ้น (THB)</label>
+          <input id="in-s-pr" type="number" step="0.01" class="input-field" placeholder="ราคา">
+        </div>
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">วันที่ทำรายการ</label>
+        <input id="in-s-date" type="date" class="input-field" value="${todayStr}">
+      </div>
+      <button onclick="commitStock()" class="w-full py-4 stock-gradient text-white rounded-2xl font-bold text-sm uppercase tracking-widest active:scale-95 transition-transform">บันทึกรายการ</button>
+    </div>`);
+};
+
+window.toggleStockType = () => {
+  const type = document.querySelector('input[name="stockType"]:checked').value;
+  const curr = document.querySelector('input[name="stockCurr"]:checked').value;
+  const boxShares = document.getElementById('box-shares');
+  const lblPrice  = document.getElementById('lbl-price');
+  const inShares  = document.getElementById('in-s-sh');
+  const inPrice   = document.getElementById('in-s-pr');
+  if (type === 'dividend') {
+    boxShares.classList.add('hidden');
+    lblPrice.innerText = `ยอดเงินปันผล (${curr})`;
+    inShares.value = 0;
+    inPrice.placeholder = 'เช่น 1500';
+  } else {
+    boxShares.classList.remove('hidden');
+    lblPrice.innerText = `ราคา/หุ้น (${curr})`;
+    inPrice.placeholder = 'ต้นทุน/ราคาขาย';
+  }
+};
+
+window.commitStock = () => {
+  const type = document.querySelector('input[name="stockType"]:checked').value;
+  const curr = document.querySelector('input[name="stockCurr"]:checked').value;
+  const sym=document.getElementById('in-s-sym').value.toUpperCase();
+  const sh=document.getElementById('in-s-sh').value;
+  const pr=document.getElementById('in-s-pr').value;
+  const d=document.getElementById('in-s-date').value;
+  if (!sym||!pr||!d||(type!=='dividend'&&!sh)) return alert('กรอกข้อมูลให้ครบนะคะ');
+  state.stocks.push({ id:Date.now().toString(), type, symbol:sym, shares:type==='dividend'?0:Number(sh), price:Number(pr), date:d, currency:curr });
+  closeModal(); renderViewport(); forceSave();
+};
+
+window.editStock = (id) => {
+  const s = state.stocks.find(x => x.id === id); if (!s) return;
+  const curr = s.currency || 'THB';
+  const todayStr = new Date().toISOString().split('T')[0];
+  openModal('แก้ไขรายการหุ้น / กองทุน', `
+    <div class="space-y-4">
+      <div class="pill-group">
+        <label><input type="radio" name="eStockType" value="buy" ${s.type==='buy'?'checked':''} onchange="toggleEStockType()"><span class="pill-opt text-blue-600">ซื้อ</span></label>
+        <label><input type="radio" name="eStockType" value="sell" ${s.type==='sell'?'checked':''} onchange="toggleEStockType()"><span class="pill-opt text-orange-600">ขาย</span></label>
+        <label><input type="radio" name="eStockType" value="dividend" ${s.type==='dividend'?'checked':''} onchange="toggleEStockType()"><span class="pill-opt text-purple-600">ปันผล</span></label>
+      </div>
+      <div class="pill-group">
+        <label><input type="radio" name="eStockCurr" value="THB" ${curr==='THB'?'checked':''} onchange="toggleEStockType()"><span class="pill-opt">THB (฿)</span></label>
+        <label><input type="radio" name="eStockCurr" value="USD" ${curr==='USD'?'checked':''} onchange="toggleEStockType()"><span class="pill-opt">USD ($)</span></label>
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ชื่อหุ้น / กองทุน</label>
+        <input id="e-s-sym" type="text" class="input-field uppercase" value="${s.symbol}">
+      </div>
+      <div class="grid grid-cols-2 gap-3" id="e-stock-shares-row" style="${s.type==='dividend'?'display:none':''}">
+        <div>
+          <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">จำนวนหุ้น</label>
+          <input id="e-s-sh" type="number" step="0.0001" class="input-field" value="${s.shares}">
+        </div>
+        <div>
+          <label id="e-lbl-price" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ราคา/หุ้น (${curr})</label>
+          <input id="e-s-pr" type="number" step="0.01" class="input-field" value="${s.type!=='dividend'?s.price:''}">
+        </div>
+      </div>
+      <div id="e-div-only-row" style="${s.type!=='dividend'?'display:none':''}">
+        <label id="e-lbl-div" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">ยอดเงินปันผล (${curr})</label>
+        <input id="e-s-div-pr" type="number" step="0.01" class="input-field" value="${s.type==='dividend'?s.price:''}">
+      </div>
+      <div>
+        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">วันที่ทำรายการ</label>
+        <input id="e-s-date" type="date" class="input-field" value="${s.date}">
+      </div>
+      <button onclick="updateStock('${id}')" class="w-full py-4 stock-gradient text-white rounded-2xl font-bold text-sm uppercase tracking-widest active:scale-95 transition-transform">อัปเดตรายการ</button>
+    </div>`);
+};
+
+window.toggleEStockType = () => {
+  const type = document.querySelector('input[name="eStockType"]:checked').value;
+  const curr = document.querySelector('input[name="eStockCurr"]:checked').value;
+  const rowS=document.getElementById('e-stock-shares-row'), rowD=document.getElementById('e-div-only-row');
+  const lblP=document.getElementById('e-lbl-price'), lblD=document.getElementById('e-lbl-div');
+  if (type==='dividend') { rowS.style.display='none'; rowD.style.display='block'; if(lblD) lblD.innerText=`ยอดเงินปันผล (${curr})`; }
+  else { rowS.style.display='grid'; rowD.style.display='none'; if(lblP) lblP.innerText=`ราคา/หุ้น (${curr})`; }
+};
+
+window.updateStock = (id) => {
+  const type=document.querySelector('input[name="eStockType"]:checked').value;
+  const curr=document.querySelector('input[name="eStockCurr"]:checked').value;
+  const sym=document.getElementById('e-s-sym').value.toUpperCase();
+  const sh=document.getElementById('e-s-sh')?.value;
+  const d=document.getElementById('e-s-date').value;
+  const pr=type==='dividend'?document.getElementById('e-s-div-pr').value:document.getElementById('e-s-pr').value;
+  if (!sym||!pr||!d||(type!=='dividend'&&!sh)) return alert('กรอกข้อมูลให้ครบนะคะ');
+  const idx=state.stocks.findIndex(x=>x.id===id);
+  if (idx!==-1) { state.stocks[idx]={...state.stocks[idx],type,symbol:sym,shares:type==='dividend'?0:Number(sh),price:Number(pr),date:d,currency:curr}; closeModal(); renderViewport(); forceSave(); }
+};
+
+window.delStock = (id) => {
+  if (confirm('ลบรายการนี้?')) { state.stocks=state.stocks.filter(x=>x.id!==id); renderViewport(); forceSave(); }
+};
+
+/* ═══════════════════════════════════════════
+   SETTINGS & NOTIFICATIONS
+═══════════════════════════════════════════ */
+window.showSettingsMenu = () => {
+  openModal('ตั้งค่าแอป', `
+    <div class="space-y-5">
+
+      <div>
+        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">อัตราแลกเปลี่ยน</p>
+        <div class="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+          <span class="text-xs font-bold text-slate-500 shrink-0">1 USD =</span>
+          <input id="set-usd-rate" type="number" step="0.1" class="input-field flex-1 text-center" value="${state.settings.usdRate||36.5}" onchange="updateUsdRate(this.value)">
+          <span class="text-xs font-bold text-slate-500 shrink-0">บาท</span>
+        </div>
+      </div>
+
+      <hr class="border-slate-100">
+
+      <div>
+        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">การแจ้งเตือน</p>
+        <div class="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+          <div>
+            <p class="text-sm font-bold text-slate-700">เตือนวันตัดรอบบัตร</p>
+            <p class="text-[9px] text-slate-400 mt-0.5">แจ้งเตือนล่วงหน้า 3 วัน</p>
+          </div>
+          <button onclick="toggleNotif()"
+            class="w-12 h-6 rounded-full transition-colors relative shadow-inner ${state.settings.enableNotif?'bg-emerald-500':'bg-slate-300'}">
+            <div class="w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all shadow-sm ${state.settings.enableNotif?'right-0.5':'left-0.5'}"></div>
+          </button>
+        </div>
+      </div>
+
+      <hr class="border-slate-100">
+
+      <div>
+        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">จัดการข้อมูล</p>
+        <p class="text-[10px] text-slate-400 mb-3">ข้อมูลเก็บไว้ในเครื่องนี้เท่านั้น อย่าลืมสำรองข้อมูลด้วยนะคะ</p>
+        <div class="flex gap-2 mb-2">
+          <button onclick="exportData()" class="flex-1 p-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold text-theme-primary flex items-center justify-center gap-2 active:scale-95 transition-transform">
+            <i class="fa-solid fa-file-zipper"></i>เซฟเป็น .zip
+          </button>
+          <button onclick="document.getElementById('importFile').click()" class="flex-1 p-3.5 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold text-slate-600 flex items-center justify-center gap-2 active:scale-95 transition-transform">
+            <i class="fa-solid fa-upload"></i>โหลดข้อมูล
+          </button>
+        </div>
+        <button onclick="clearAllData()" class="w-full p-3.5 bg-rose-50 border border-rose-100 rounded-2xl text-xs font-bold text-rose-500 flex items-center justify-center gap-2 active:scale-95 transition-transform">
+          <i class="fa-solid fa-trash-can"></i>ล้างข้อมูลทั้งหมด
+        </button>
+      </div>
+
+      <button onclick="closeModal()" class="w-full py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm uppercase tracking-widest active:scale-95 transition-transform">ปิดหน้าต่าง</button>
+    </div>`);
+};
+
+window.updateUsdRate = (val) => { if (val && Number(val) > 0) { state.settings.usdRate = Number(val); forceSave(); renderViewport(); } };
+window.toggleNotif   = () => { state.settings.enableNotif = !state.settings.enableNotif; forceSave(); showSettingsMenu(); renderViewport(); };
+
+window.showNotifs = () => {
+  if (!state.settings.enableNotif) {
+    openModal('การแจ้งเตือน', `
+      <div class="text-center py-8">
+        <i class="fa-solid fa-bell-slash text-4xl text-slate-200 mb-3 block"></i>
+        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">คุณปิดการแจ้งเตือนไว้ค่ะ</p>
+      </div>
+      <button onclick="closeModal()" class="w-full py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm uppercase tracking-widest mt-4">ปิด</button>`);
+    return;
+  }
+  const today = new Date().getDate();
+  const list = state.cards.filter(c => { const d = c.date - today; return d >= 0 && d <= 3; });
+  openModal('การแจ้งเตือน 🔔', `
+    <div class="space-y-3">
+      ${list.length === 0
+        ? `<div class="text-center py-8"><i class="fa-solid fa-party-horn text-4xl text-slate-200 mb-3 block"></i><p class="text-xs font-bold text-slate-400 uppercase tracking-widest">ยังไม่มีดิวใกล้ชำระค่ะ ✌️</p></div>`
+        : list.map(c => `
+            <div class="flex items-center gap-4 p-4 bg-rose-50 rounded-2xl border border-rose-100">
+              <div class="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center text-rose-500"><i class="fa-solid fa-clock"></i></div>
+              <div>
+                <p class="text-sm font-black text-slate-800">บัตร ${c.name}</p>
+                <p class="text-[9px] font-bold text-rose-500 uppercase tracking-widest mt-0.5">ตัดรอบ${c.date - today === 0 ? 'วันนี้!' : `ใน ${c.date-today} วัน`}</p>
+              </div>
+            </div>`).join('')}
+      <button onclick="closeModal()" class="w-full py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm uppercase tracking-widest mt-2">ปิด</button>
+    </div>`);
+};
+
+/* ═══════════════════════════════════════════
+   DATA MANAGEMENT
+═══════════════════════════════════════════ */
+function arrayToCSV(arr) {
+  if (arr.length === 0) return '';
+  const keys = Object.keys(arr[0]);
+  return [keys.join(','), ...arr.map(obj => keys.map(k => `"${(obj[k]||'').toString().replace(/"/g,'""')}"`).join(','))].join('\n');
+}
+
+window.exportData = async () => {
+  if (typeof JSZip === 'undefined') return alert('กำลังโหลด JSZip กรุณาลองใหม่อีกครั้งค่ะ');
+  const zip = new JSZip();
+  zip.file('meetang_system_data.json', JSON.stringify({ cards:state.cards, installments:state.installments, gold:state.gold, stocks:state.stocks, marketPrices:state.marketPrices, theme:state.theme, settings:state.settings, lastBackup:state.lastBackup }, null, 2));
+  const csv = zip.folder('excel_files');
+  if (state.cards.length)        csv.file('cards.csv',        '\ufeff'+arrayToCSV(state.cards));
+  if (state.installments.length) csv.file('installments.csv', '\ufeff'+arrayToCSV(state.installments));
+  if (state.gold.length)         csv.file('gold.csv',         '\ufeff'+arrayToCSV(state.gold));
+  if (state.stocks.length)       csv.file('stocks.csv',       '\ufeff'+arrayToCSV(state.stocks));
+  const blob = await zip.generateAsync({ type:'blob' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `meetang_backup_${new Date().toISOString().slice(0,10)}.zip`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  state.lastBackup = 'เซฟ Zip เมื่อ ' + new Date().toLocaleString('th-TH', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+  forceSave(); if (state.tab === 'home') renderViewport();
+};
+
+window.importData = (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'zip') {
+    if (typeof JSZip === 'undefined') return alert('โหลดไลบรารีไม่สำเร็จค่ะ');
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const zip  = await JSZip.loadAsync(ev.target.result);
+        if (!zip.file('meetang_system_data.json')) return alert('ไม่พบไฟล์ข้อมูลค่ะ');
+        restoreFromJson(await zip.file('meetang_system_data.json').async('string'));
+      } catch { alert('เกิดข้อผิดพลาดในการแตกไฟล์ค่ะ'); }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader = new FileReader();
+    reader.onload = (ev) => restoreFromJson(ev.target.result);
+    reader.readAsText(file);
+  }
+  e.target.value = '';
+};
+
+function restoreFromJson(json) {
+  try {
+    const p = JSON.parse(json);
+    if (p.cards !== undefined) {
+      state.cards=p.cards||[]; state.installments=p.installments||[]; state.gold=p.gold||[]; state.stocks=p.stocks||[]; state.marketPrices=p.marketPrices||{};
+      if (p.theme) state.theme=p.theme;
+      if (p.settings) { state.settings=p.settings; if (!state.settings.usdRate) state.settings.usdRate=36.5; }
+      state.lastBackup = 'โหลดเมื่อ '+new Date().toLocaleString('th-TH',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+      forceSave(); applyTheme(state.theme.color); renderViewport(); closeModal();
+      alert('กู้คืนข้อมูลสำเร็จแล้วค่ะ! 🎉');
+    } else { alert('ไฟล์ไม่ถูกต้องค่ะ'); }
+  } catch { alert('เกิดข้อผิดพลาดในการอ่านไฟล์ค่ะ'); }
+}
+
+window.clearAllData = () => {
+  if (confirm('⚠️ แน่ใจนะคะว่าจะล้างข้อมูลทั้งหมด? (แนะนำให้ Backup ก่อนค่ะ)')) {
+    if (confirm('ยืนยันการลบจริง ๆ? กู้คืนไม่ได้นะคะ')) {
+      state.cards=[]; state.installments=[]; state.gold=[]; state.stocks=[]; state.marketPrices={}; state.lastBackup='';
+      forceSave(); closeModal(); renderViewport();
+      alert('เคลียร์ข้อมูลเรียบร้อยแล้วค่ะ ✨');
+    }
+  }
+};
+
+/* ═══════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════ */
+window.onload = run;
+</script>
 </body>
-
 </html>
